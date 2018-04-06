@@ -68,8 +68,19 @@ typedef enum t_class
   function_name,// 6
   terminator,   // 7
   error         // 8
-
 } token_class;
+
+/* Table header, at start of a .tab file */
+typedef struct table_file_header_def
+{
+  int    file_size;        // 4 bytes
+  int    record_size;      // 4 bytes
+  int    num_records;      // 4 bytes
+  int    record_offset;    // 4 bytes
+  int    file_header_flag; // 4 bytes
+  tpd_entry  *tpd_ptr;         // 4 bytes [?]
+} table_file_header;           // minimum size = 24
+
 
 /* This enum defines the different values associated with
    a single valid token.  Use for semantic processing. */
@@ -186,3 +197,5 @@ int initialize_tpd_list();
 int add_tpd_to_list(tpd_entry *tpd);
 int drop_tpd_from_list(char *tabname);
 tpd_entry* get_tpd_from_list(char *tabname);
+
+int create_table_data_file(char *tab_name, table_file_header_def table_file_header);

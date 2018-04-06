@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
 
   if (rc) {
     printf("\nError in initialize_tpd_list().\nrc = %d\n", rc);
+
   } else {
     rc = get_token(argv[1], &tok_list);
 
@@ -324,13 +325,17 @@ int sem_create_table(token_list *t_list) {
   token_list *cur;
   tpd_entry tab_entry;
   tpd_entry *new_entry = NULL;
+  table_file_header tab_file_header;
+  int record_size = 0;
+
   bool column_done = false;
   int cur_id = 0;
   cd_entry col_entry[MAX_NUM_COL];
 
-
   memset(&tab_entry, '\0', sizeof(tpd_entry));
+  memset(&tab_file_header, '\0', sizeof(table_file_header));
   cur = t_list;
+
   if ((cur->tok_class != keyword) &&
       (cur->tok_class != identifier) &&
       (cur->tok_class != type_name)) {
@@ -399,7 +404,9 @@ int sem_create_table(token_list *t_list) {
                     rc = INVALID_COLUMN_DEFINITION;
                     cur->tok_value = INVALID;
                   } else {
-                    col_entry[cur_id].col_len = sizeof(int);
+                    int attr_size = sizeof(int);
+                    col_entry[cur_id].col_len = attr_size;
+                    record_size += attr_size + 1;
 
                     if ((cur->tok_value == K_NOT) &&
                         (cur->next->tok_value != K_NULL)) {
@@ -440,7 +447,10 @@ int sem_create_table(token_list *t_list) {
                       cur->tok_value = INVALID;
                     } else {
                       /* Got a valid integer - convert */
-                      col_entry[cur_id].col_len = atoi(cur->tok_string);
+                      int attr_size = atoi(cur->tok_string);
+                      col_entry[cur_id].col_len = attr_size;
+                      record_size += attr_size + 1;
+
                       cur = cur->next;
 
                       if (cur->tok_value != S_RIGHT_PAREN) {
@@ -518,7 +528,19 @@ int sem_create_table(token_list *t_list) {
                    (void *) col_entry,
                    sizeof(cd_entry) * tab_entry.num_columns);
 
+            // round up to 4
+            record_size += (record_size % 4) ? (4 - (record_size % 4)) : 0;
+
+            tab_file_header.file_size = sizeof(table_file_header_def);
+            tab_file_header.record_size = record_size;
+            tab_file_header.num_records = 0;
+            tab_file_header.record_offset = 0;
+            tab_file_header.file_header_flag = 0;
+            tab_file_header.tpd_ptr = NULL;
+
             rc = add_tpd_to_list(new_entry);
+
+            create_table_data_file(new_entry->table_name, tab_file_header);
 
             free(new_entry);
           }
@@ -772,6 +794,33 @@ int add_tpd_to_list(tpd_entry *tpd) {
     fwrite(tpd, tpd->tpd_size, 1, fhandle);
     fflush(fhandle);
     fclose(fhandle);
+  }
+
+  return rc;
+}
+
+int create_table_data_file(char *tab_name, table_file_header_def table_file_header) {
+  FILE *fhandle = NULL;
+
+  int rc;
+
+  char *file_name;
+//  file_name = (char * ) calloc(1, strlen(tab_name) + 4);
+
+  file_name = strcat(tab_name, ".tab");
+
+  /* Open for read */
+  if (fopen(file_name, "rbc") == NULL) {
+
+    if ((fhandle = fopen(file_name, "wbc")) == NULL) {
+      rc = FILE_OPEN_ERROR;
+
+    } else {
+      fwrite(&table_file_header, sizeof(table_file_header), 1, fhandle);
+      printf("allocated: %d", (int) sizeof(table_file_header.tpd_ptr));
+      fflush(fhandle);
+      fclose(fhandle);
+    }
   }
 
   return rc;
