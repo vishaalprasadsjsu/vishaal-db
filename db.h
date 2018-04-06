@@ -10,7 +10,7 @@ db.h - This file contains all the structures, defines, and function
 #define STRING_BREAK    " (),<>="
 #define NUMBER_BREAK    " ),"
 
-/* Column descriptor sturcture = 20+4+4+4+4 = 36 bytes */
+/* Column descriptor structure = 20+4+4+4+4 = 36 bytes */
 typedef struct cd_entry_def
 {
   char    col_name[MAX_IDENT_LEN+4];
@@ -20,7 +20,7 @@ typedef struct cd_entry_def
   int     not_null;
 } cd_entry;
 
-/* Table packed descriptor sturcture = 4+20+4+4+4 = 36 bytes
+/* Table packed descriptor structure = 4+20+4+4+4 = 36 bytes
    Minimum of 1 column in a table - therefore minimum size of
    1 valid tpd_entry is 36+36 = 72 bytes. */
 typedef struct tpd_entry_def
@@ -68,7 +68,7 @@ typedef enum t_class
   function_name,// 6
   terminator,   // 7
   error         // 8
-  
+
 } token_class;
 
 /* This enum defines the different values associated with
@@ -77,7 +77,7 @@ typedef enum t_value
 {
   T_INT = 10,   // 10 - new type should be added above this line
   T_CHAR,       // 11 
-  T_VARCHAR,        // 12       
+  T_VARCHAR,    // 12
   K_CREATE,     // 13
   K_TABLE,      // 14
   K_NOT,        // 15
@@ -124,10 +124,10 @@ typedef enum t_value
 
 /* New keyword must be added in the same position/order as the enum
    definition above, otherwise the lookup will be wrong */
-char *keyword_table[] = 
+char *keyword_table[] =
 {
   "int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema",
-  "for", "to", "insert", "into", "values", "delete", "from", "where", 
+  "for", "to", "insert", "into", "values", "delete", "from", "where",
   "update", "set", "select", "order", "by", "desc", "is", "and", "or",
   "sum", "avg", "count"
 };
