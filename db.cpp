@@ -9,6 +9,8 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/file.h>
+#include <zconf.h>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define strcasecmp _stricmp
@@ -293,6 +295,12 @@ int do_semantic(token_list *tok_list) {
     cur_cmd = LIST_SCHEMA;
     cur = cur->next->next;
 
+  } else if ((cur->tok_value == K_INSERT) &&
+             ((cur->next != NULL) && (cur->next->tok_value == K_INTO))) {
+
+    printf("INSERT INTO statement\n");
+    cur_cmd = INSERT;
+    cur = cur->next->next;
 
   } else {
     printf("Invalid statement\n");
@@ -313,6 +321,8 @@ int do_semantic(token_list *tok_list) {
       case LIST_SCHEMA:
         rc = sem_list_schema(cur);
         break;
+      case INSERT:
+        rc = sem_insert_value(cur);
       default:; /* no action */
     }
   }
@@ -540,7 +550,7 @@ int sem_create_table(token_list *t_list) {
 
             rc = add_tpd_to_list(new_entry);
 
-            create_table_data_file(new_entry->table_name, tab_file_header);
+            create_table_data_file(new_entry->table_name, &tab_file_header);
 
             free(new_entry);
           }
@@ -721,6 +731,154 @@ int sem_list_schema(token_list *t_list) {
   return rc;
 }
 
+int sem_insert_value(token_list *t_list) {
+
+  int rc = 0;
+  int num_tables = g_tpd_list->num_tables;
+  token_list *cur_token = t_list;
+  char *table_name = cur_token->tok_string;
+  tpd_entry *curr_table_tpd = get_tpd_from_list(table_name);
+
+  if (curr_table_tpd == NULL) {
+    return TABLE_NOT_EXIST;
+  } else {
+    cur_token = cur_token->next;
+  }
+
+  // make sure next token is keyword "values"
+  if (cur_token->tok_class != 1 || cur_token->tok_value != 24) {
+    return INVALID_STATEMENT;
+  } else {
+    cur_token = cur_token->next;
+  }
+
+  token_list *open_paren_token = NULL; //hold a reference to the open parenthesis
+
+  // make sure next token is open parenthesis
+  if (cur_token->tok_class != 3 || cur_token->tok_value != 70) {
+    return INVALID_STATEMENT;
+  } else {
+    open_paren_token = cur_token;
+    cur_token = cur_token->next;
+  }
+
+  // get cd (tpd_start is a pointer to the table)
+  cd_entry *curr_cd = (cd_entry *) ((char *) curr_table_tpd + curr_table_tpd->cd_offset);
+  cd_entry *cd_start = curr_cd;
+
+  // read the .tab file
+
+  table_file_header *file_header = get_file_header(curr_table_tpd->table_name);
+
+  // check validity of input
+  for (int i = 0; i < curr_table_tpd->num_columns; ++i, cur_token = cur_token->next->next, curr_cd++) {
+
+    printf("checking [%s]\n", curr_cd->col_name);
+
+    // invalid null column
+    if (curr_cd->not_null && cur_token->tok_value == 16) {
+      printf("error: [%s] marked not null\n", curr_cd->col_name);
+      return INVALID_COLUMN_DEFINITION; // todo -- add a custom error
+    }
+
+    // expected string, got something else
+    if (curr_cd->col_type == T_CHAR) {
+      if (cur_token->tok_value != STRING_LITERAL) {
+        printf("error: expected string for [%s]\n", curr_cd->col_name);
+        return INVALID_COLUMN_DEFINITION; //todo -- add custom error
+      }
+
+      // check size
+      if (curr_cd->col_len < strlen(cur_token->tok_string)) {
+        printf("error: value too big for [%s]: expected length [%d] but got [%d]\n",
+               curr_cd->col_name, curr_cd->col_len, (int) strlen(cur_token->tok_string));
+
+      } else {
+        printf("adding: [%d] [%s]\n", (int) strlen(cur_token->tok_string), cur_token->tok_string);
+      }
+
+    } else if (curr_cd->col_type == T_INT) {
+
+      if (cur_token->tok_value != INT_LITERAL) {
+        printf("error: expected int for [%s]\n", curr_cd->col_name);
+        return INVALID_COLUMN_DEFINITION; //todo -- add custom error
+
+      } else {
+        printf("adding: [%d] [%d]\n", 4, atoi(cur_token->tok_string));
+      }
+    }
+  }
+
+  if (file_header->num_records == 0) {
+    file_header->record_offset = file_header->file_size;
+  }
+
+  file_header->file_size += file_header->record_size;
+  file_header->num_records++;
+  create_table_data_file(table_name, file_header); // overwrites at the top
+
+  curr_cd = cd_start;
+  cur_token = open_paren_token->next;
+
+  int bytes_written = 0;
+
+  for (int i = 0; i < curr_table_tpd->num_columns; ++i, cur_token = cur_token->next->next, curr_cd++) {
+    int size = cur_token->tok_value == INT_LITERAL ? sizeof(int) : curr_cd->col_len;
+    bytes_written += size + 1; // +1 for prefix size
+    append_field_to_tab(table_name, cur_token, size);
+  }
+
+  if (file_header->record_size > bytes_written) {
+    append_zeros_to_tab(table_name, file_header->record_size - bytes_written);
+  }
+
+  return rc;
+}
+
+void append_zeros_to_tab(char *tab_name, int how_many_bytes) {
+  FILE *fhandle = NULL;
+
+  char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
+  strcpy(file_name, tab_name);
+  strcat(file_name, ".tab");
+  char *zeroed_out = (char *) calloc(1, how_many_bytes);
+
+  fhandle = fopen(file_name, "a+b");
+  fwrite(zeroed_out, how_many_bytes, 1, fhandle);
+  fflush(fhandle);
+  fclose(fhandle);
+}
+
+void append_field_to_tab(char *tab_name, token_list *token, int str_length) {
+
+  FILE *fhandle = NULL;
+
+  char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
+  strcpy(file_name, tab_name);
+  strcat(file_name, ".tab");
+
+  fhandle = fopen(file_name, "a+b");
+
+  // now write the actual data
+  if (token->tok_value == INT_LITERAL) {
+    int prefix_size = sizeof(int);
+    int data = atoi(token->tok_string);
+    fwrite(&prefix_size, 1, 1, fhandle); // each field prefixed with length
+    fwrite(&data, sizeof(int), 1, fhandle);
+
+  } else if (token->tok_value == STRING_LITERAL) {
+    int prefix_size = (int) strlen(token->tok_string);
+    fwrite(&prefix_size, 1, 1, fhandle); // each field prefixed with length
+    fwrite(token->tok_string, str_length, 1, fhandle);
+
+  } else {
+    printf("not appending field, unexpected type\n");
+  }
+
+  fflush(fhandle);
+  fclose(fhandle);
+}
+
 int initialize_tpd_list() {
   int rc = 0;
   FILE *fhandle = NULL;
@@ -799,28 +957,31 @@ int add_tpd_to_list(tpd_entry *tpd) {
   return rc;
 }
 
-int create_table_data_file(char *tab_name, table_file_header_def table_file_header) {
+int create_table_data_file(char *tab_name, table_file_header *table_file_header) {
   FILE *fhandle = NULL;
 
-  int rc;
+  int rc = 0;
 
-  char *file_name;
-//  file_name = (char * ) calloc(1, strlen(tab_name) + 4);
+  char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
+  strcpy(file_name, tab_name);
+  strcat(file_name, ".tab");
 
-  file_name = strcat(tab_name, ".tab");
+  char *file_mode = NULL;
 
-  /* Open for read */
-  if (fopen(file_name, "rbc") == NULL) {
+  if (access(file_name, F_OK)) {
+    file_mode = "wbc";
+  } else {
+    file_mode = "r+";
+  }
 
-    if ((fhandle = fopen(file_name, "wbc")) == NULL) {
-      rc = FILE_OPEN_ERROR;
+  if ((fhandle = fopen(file_name, file_mode)) == NULL) {
+    rc = FILE_OPEN_ERROR;
 
-    } else {
-      fwrite(&table_file_header, sizeof(table_file_header), 1, fhandle);
-      printf("allocated: %d", (int) sizeof(table_file_header.tpd_ptr));
-      fflush(fhandle);
-      fclose(fhandle);
-    }
+  } else {
+    rewind(fhandle);
+    fwrite(table_file_header, sizeof(*table_file_header), 1, fhandle);
+    fflush(fhandle);
+    fclose(fhandle);
   }
 
   return rc;
@@ -937,3 +1098,54 @@ tpd_entry *get_tpd_from_list(char *tabname) {
 
   return tpd;
 }
+
+table_file_header *get_file_header(char *tab_name) {
+
+  FILE *fhandle = NULL;
+  struct stat file_stat;
+  table_file_header *table_header = NULL;
+  char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
+  strcpy(file_name, tab_name);
+  strcat(file_name, ".tab");
+
+  if ((fhandle = fopen(file_name, "rbc")) == NULL) {
+    return NULL;
+
+  } else {
+    fstat(fileno(fhandle), &file_stat);
+    table_header = (table_file_header *) calloc(1, file_stat.st_size);
+    fread(table_header, file_stat.st_size, 1, fhandle);
+    return table_header;
+  }
+
+}
+
+//int add_record_to_tab(char *record_data) {
+//  int rc = 0;
+//  int old_size = 0;
+//  FILE *fhandle = NULL;
+//
+//  if ((fhandle = fopen("dbfile.bin", "wbc")) == NULL) {
+//    rc = FILE_OPEN_ERROR;
+//  } else {
+//    old_size = g_tpd_list->list_size;
+//
+//    if (g_tpd_list->num_tables == 0) {
+//      /* If this is an empty list, overlap the dummy header */
+//      g_tpd_list->num_tables++;
+//      g_tpd_list->list_size += (tpd->tpd_size - sizeof(tpd_entry));
+//      fwrite(g_tpd_list, old_size - sizeof(tpd_entry), 1, fhandle);
+//    } else {
+//      /* There is at least 1, just append at the end */
+//      g_tpd_list->num_tables++;
+//      g_tpd_list->list_size += tpd->tpd_size;
+//      fwrite(g_tpd_list, old_size, 1, fhandle);
+//    }
+//
+//    fwrite(tpd, tpd->tpd_size, 1, fhandle);
+//    fflush(fhandle);
+//    fclose(fhandle);
+//  }
+//
+//  return rc;
+//}
