@@ -1119,33 +1119,3 @@ table_file_header *get_file_header(char *tab_name) {
   }
 
 }
-
-//int add_record_to_tab(char *record_data) {
-//  int rc = 0;
-//  int old_size = 0;
-//  FILE *fhandle = NULL;
-//
-//  if ((fhandle = fopen("dbfile.bin", "wbc")) == NULL) {
-//    rc = FILE_OPEN_ERROR;
-//  } else {
-//    old_size = g_tpd_list->list_size;
-//
-//    if (g_tpd_list->num_tables == 0) {
-//      /* If this is an empty list, overlap the dummy header */
-//      g_tpd_list->num_tables++;
-//      g_tpd_list->list_size += (tpd->tpd_size - sizeof(tpd_entry));
-//      fwrite(g_tpd_list, old_size - sizeof(tpd_entry), 1, fhandle);
-//    } else {
-//      /* There is at least 1, just append at the end */
-//      g_tpd_list->num_tables++;
-//      g_tpd_list->list_size += tpd->tpd_size;
-//      fwrite(g_tpd_list, old_size, 1, fhandle);
-//    }
-//
-//    fwrite(tpd, tpd->tpd_size, 1, fhandle);
-//    fflush(fhandle);
-//    fclose(fhandle);
-//  }
-//
-//  return rc;
-//}
