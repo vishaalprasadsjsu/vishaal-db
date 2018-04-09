@@ -1188,8 +1188,8 @@ int sem_select_star(token_list *t_list) {
       } else if (curr_cd->col_type == T_INT) {
 
         curr_field++;
-        int *data = (int *) calloc(1, sizeof(int) * 4);
-        memcpy(data, &curr_field[0], sizeof(int) * 4);
+        int *data = (int *) calloc(1, sizeof(int));
+        memcpy(data, &curr_field[0], sizeof(int));
         curr_field += sizeof(int);
 
         printf("%16d|", *data);
