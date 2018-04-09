@@ -203,4 +203,4 @@ int create_table_data_file(char *tab_name, table_file_header *table_file_header)
 table_file_header *get_file_header(char *tab_name);
 void append_field_to_tab(char *tab_name, token_list *token, int str_length);
 void append_zeros_to_tab(char *tab_name, int how_many_bytes);
-void sem_select_star(char *tab_name);
+int sem_select_star(token_list *t_list);

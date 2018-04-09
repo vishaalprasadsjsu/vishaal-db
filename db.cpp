@@ -215,9 +215,7 @@ int get_token(char *command, token_list **tok_list) {
         add_to_list(tok_list, temp_string, error, INVALID);
         rc = INVALID;
         done = true;
-      }
-
-      else {
+      } else {
         /* must be a ' */
         add_to_list(tok_list, temp_string, constant, STRING_LITERAL);
         cur++;
@@ -297,9 +295,14 @@ int do_semantic(token_list *tok_list) {
 
   } else if ((cur->tok_value == K_INSERT) &&
              ((cur->next != NULL) && (cur->next->tok_value == K_INTO))) {
-
     printf("INSERT INTO statement\n");
     cur_cmd = INSERT;
+    cur = cur->next->next;
+
+  } else if ((cur->tok_value == K_SELECT) &&
+             ((cur->next != NULL) && (cur->next->tok_value == S_STAR))) {
+    printf("SELECT * statement\n");
+    cur_cmd = SELECT;
     cur = cur->next->next;
 
   } else {
@@ -323,7 +326,11 @@ int do_semantic(token_list *tok_list) {
         break;
       case INSERT:
         rc = sem_insert_value(cur);
-      default:; /* no action */
+        break;
+      case SELECT:
+        rc = sem_select_star(cur);
+        break;
+        // default: /* no action */
     }
   }
 
@@ -1117,5 +1124,97 @@ table_file_header *get_file_header(char *tab_name) {
     fread(table_header, file_stat.st_size, 1, fhandle);
     return table_header;
   }
+
+}
+
+int sem_select_star(token_list *t_list) {
+
+  tpd_entry *tpd = get_tpd_from_list(t_list->next->tok_string);
+
+  if (tpd == NULL) {
+    printf("table not found\n");
+    return INVALID_TABLE_NAME;
+  }
+
+  cd_entry *curr_cd = (cd_entry *) ((char *) tpd + tpd->cd_offset);
+  cd_entry *first_cd = curr_cd;
+
+  // header line 1/3
+  printf("+");
+  for (int i = 0; i < tpd->num_columns; ++i) {
+    printf("----------------+");
+  }
+  printf("\n|");
+
+  // header line 2/3
+  for (int i = 0; i < tpd->num_columns; ++i, curr_cd++) {
+    printf("%-16s|", curr_cd->col_name);
+  }
+  printf("\n+");
+
+  // header line 3/3
+  for (int i = 0; i < tpd->num_columns; ++i) {
+    printf("----------------+");
+  }
+  printf("\n");
+
+  table_file_header *file_header = get_file_header(t_list->next->tok_string);
+
+  if (file_header->num_records == 0) {
+    printf("there are no records in this table\n");
+    return 0;
+  }
+
+  curr_cd = first_cd;
+  char *curr_field = (char *) (file_header + 1);
+  char *record_head = curr_field;
+
+  for (int i = 0; i < file_header->num_records; ++i) {
+
+    printf("|");
+    curr_field = record_head;
+
+    for (int j = 0; j < tpd->num_columns; ++j) {
+
+      if (curr_cd->col_type == T_CHAR) {
+
+        char *data = (char *) calloc(1, (size_t) curr_cd->col_len);
+
+        memcpy(data, ++curr_field, (size_t) curr_cd->col_len);
+
+        printf("%-16s|", data);
+        curr_field += curr_cd->col_len;
+
+      } else if (curr_cd->col_type == T_INT) {
+
+        curr_field++;
+        int *data = (int *) calloc(1, sizeof(int) * 4);
+        memcpy(data, &curr_field[0], sizeof(int) * 4);
+        curr_field += sizeof(int);
+
+        printf("%16d|", *data);
+
+      } else {
+        printf("unexpected type");
+      }
+
+      curr_cd++;
+    }
+
+    printf("\n");
+
+    curr_cd = first_cd;
+
+    record_head += file_header->record_size;
+
+  }
+
+  printf("+");
+  for (int i = 0; i < tpd->num_columns; ++i) {
+    printf("----------------+");
+  }
+  printf("\n");
+
+  return 0;
 
 }
