@@ -1,0 +1,212 @@
+
+C:\sjsu\167b\s16,cs157b\p1\test>set echo=on 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem TEST1.BAT - test driver for CS167B project 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem Compile your code 
+
+C:\sjsu\167b\s16,cs157b\p1\test>cl db.cpp 
+db.cpp
+Microsoft (R) Incremental Linker Version 10.00.40219.01
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+/out:db.exe 
+db.obj 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem Clean up 
+
+C:\sjsu\167b\s16,cs157b\p1\test>del dbfile.bin *.tab 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ========================================================================================== 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem #01 Test setup - create table + insert data 
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "create table class ( Student char(12) NOT NULL, Gender char(1), Exams int, Quiz int, Total int )" 
+CREATE TABLE statement
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem #02 Insert 15 rows of data 
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Siu', 'M', 480, 80, 560)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 56. Number of records: 1
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Frank', 'M', 600, 100, 700)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 88. Number of records: 2
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Jordon', 'M', 450, 75, 525)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 120. Number of records: 3
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Jeff', 'M', 455, 60, 515)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 152. Number of records: 4
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Ying', 'F', 540, 85, 625)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 184. Number of records: 5
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('David', 'M', 550, 83, 633)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 216. Number of records: 6
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('euna', 'F', 460, 75, 535)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 248. Number of records: 7
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Victor', 'M', 475, 60, 535)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 280. Number of records: 8
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Linawati', 'F', 490, 86, 576)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 312. Number of records: 9
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into class values ('Stephen', 'M', 520, 76, 596)" 
+dbfile.bin size = 228
+INSERT statement
+class.tab size: 344. Number of records: 10
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem #dir verify file sizes 
+
+C:\sjsu\167b\s16,cs157b\p1\test>dir
+ Volume in drive C has no label.
+ Volume Serial Number is 611C-5E68
+
+ Directory of C:\sjsu\167b\s16,cs157b\p1\test
+
+04/12/2016  04:59 PM    <DIR>          .
+04/12/2016  04:59 PM    <DIR>          ..
+04/12/2016  04:59 PM               344 class.tab
+04/18/2015  08:00 PM            60,204 db.cpp
+04/12/2016  04:59 PM            87,552 db.exe
+04/18/2015  07:30 PM             7,985 db.h
+04/12/2016  04:59 PM            30,114 db.obj
+04/12/2016  04:59 PM               228 dbfile.bin
+04/22/2013  05:00 AM             2,717 test1.bat
+04/12/2016  04:59 PM                 0 test1.out
+               8 File(s)        189,144 bytes
+               2 Dir(s)  310,505,345,024 bytes free
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem #03 & #04 Simple select * & verify headings & verify NULL display with - 
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "select * from class" 
+dbfile.bin size = 228
+SELECT statement
++----------------+----------------+----------------+----------------+----------------+
+|Student         |Gender          |Exams           |Quiz            |Total           |
++----------------+----------------+----------------+----------------+----------------+
+|Siu             |M               |             480|              80|             560|
+|Frank           |M               |             600|             100|             700|
+|Jordon          |M               |             450|              75|             525|
+|Jeff            |M               |             455|              60|             515|
+|Ying            |F               |             540|              85|             625|
+|David           |M               |             550|              83|             633|
+|euna            |F               |             460|              75|             535|
+|Victor          |M               |             475|              60|             535|
+|Linawati        |F               |             490|              86|             576|
+|Stephen         |M               |             520|              76|             596|
++----------------+----------------+----------------+----------------+----------------+
+10 rows selected.
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ========================================================================================== 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem Error Testing Section 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem Setup the table 
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "create table test (col1 char(10), col2 int, col3 int not null)" 
+dbfile.bin size = 228
+CREATE TABLE statement
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into test values ( 'one', 1, 11 )" 
+dbfile.bin size = 372
+INSERT statement
+test.tab size: 48. Number of records: 1
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into test values ( 'two', 2, 22 )" 
+dbfile.bin size = 372
+INSERT statement
+test.tab size: 72. Number of records: 2
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "select * from test" 
+dbfile.bin size = 372
+SELECT statement
++----------------+----------------+----------------+
+|col1            |col2            |col3            |
++----------------+----------------+----------------+
+|one             |               1|              11|
+|two             |               2|              22|
++----------------+----------------+----------------+
+2 rows selected.
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem #5 "syntax errors in various INSERT statement combinations" 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into test ( 'not_null', 1, '11' )" 
+dbfile.bin size = 372
+INSERT statement
+values keyword missing
+Error in the string: (
+rc=-199
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into test values ( 'not_null', 1 )" 
+dbfile.bin size = 372
+INSERT statement
+Missing comma, possible that number of columns and insert values don't match
+Error in the string: )
+rc=-384
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem #6 "data type mismatch" 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into test values ( 'not_null', 1, 'string' )" 
+dbfile.bin size = 372
+INSERT statement
+Type mismatch
+
+Error in the string: string
+rc=-382
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem #7 NOT NULL on inserts 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem
+
+C:\sjsu\167b\s16,cs157b\p1\test>db "insert into test values ( 'not_null', 1, NULL )" 
+dbfile.bin size = 372
+INSERT statement
+Not Null constraint exists for column name col3
+
+Error in the string: NULL
+rc=-380
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem ------------------------------------------------------------------------------------------ 
+
+C:\sjsu\167b\s16,cs157b\p1\test>rem End of test1.bat 
