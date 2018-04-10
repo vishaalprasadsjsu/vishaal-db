@@ -747,7 +747,7 @@ int sem_insert_value(token_list *t_list) {
   char *table_name = cur_token->tok_string;
   tpd_entry *curr_table_tpd = get_tpd_from_list(table_name);
 
-  if (curr_table_tpd == NULL) {
+  if (curr_table_tpd == nullptr) {
     return TABLE_NOT_EXIST;
   } else {
     cur_token = cur_token->next;
@@ -761,7 +761,7 @@ int sem_insert_value(token_list *t_list) {
     cur_token = cur_token->next;
   }
 
-  token_list *open_paren_token = NULL; //hold a reference to the open parenthesis
+  token_list *open_paren_token = nullptr; //hold a reference to the open parenthesis
 
   // make sure next token is open parenthesis
   if (cur_token->tok_class != 3 || cur_token->tok_value != 70) {
@@ -849,7 +849,7 @@ int sem_insert_value(token_list *t_list) {
 }
 
 void append_zeros_to_tab(char *tab_name, int how_many_bytes) {
-  FILE *fhandle = NULL;
+  FILE *fhandle = nullptr;
 
   char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
   strcpy(file_name, tab_name);
@@ -857,7 +857,7 @@ void append_zeros_to_tab(char *tab_name, int how_many_bytes) {
   char *zeroed_out = (char *) calloc(1, how_many_bytes);
 
   fhandle = fopen(file_name, "a+b");
-  fwrite(zeroed_out, how_many_bytes, 1, fhandle);
+  fwrite(zeroed_out, (size_t) how_many_bytes, 1, fhandle);
   fflush(fhandle);
   fclose(fhandle);
 }
@@ -923,14 +923,14 @@ int initialize_tpd_list() {
     /* There is a valid dbfile.bin file - get file size */
 //    _fstat(_fileno(fhandle), &file_stat);
     fstat(fileno(fhandle), &file_stat);
-    printf("dbfile.bin size = %d\n", file_stat.st_size);
+    printf("dbfile.bin size = %d\n", (int) file_stat.st_size);
 
-    g_tpd_list = (tpd_list *) calloc(1, file_stat.st_size);
+    g_tpd_list = (tpd_list *) calloc(1, (size_t) file_stat.st_size);
 
     if (!g_tpd_list) {
       rc = MEMORY_ERROR;
     } else {
-      fread(g_tpd_list, file_stat.st_size, 1, fhandle);
+      fread(g_tpd_list, (size_t) file_stat.st_size, 1, fhandle);
       fflush(fhandle);
       fclose(fhandle);
 
@@ -975,7 +975,7 @@ int add_tpd_to_list(tpd_entry *tpd) {
 }
 
 int create_table_data_file(char *tab_name, table_file_header *table_file_header) {
-  FILE *fhandle = NULL;
+  FILE *fhandle = nullptr;
 
   int rc = 0;
 
@@ -983,12 +983,12 @@ int create_table_data_file(char *tab_name, table_file_header *table_file_header)
   strcpy(file_name, tab_name);
   strcat(file_name, ".tab");
 
-  char *file_mode = NULL;
+  char *file_mode = nullptr;
 
   if (access(file_name, F_OK)) {
-    file_mode = "wbc";
+    file_mode = (char *) "wbc";
   } else {
-    file_mode = "r+";
+    file_mode = (char *) "r+";
   }
 
   if ((fhandle = fopen(file_name, file_mode)) == NULL) {
@@ -1017,9 +1017,9 @@ int drop_tpd_from_list(char *tabname) {
         /* found it */
         found = true;
         int old_size = 0;
-        FILE *fhandle = NULL;
+        FILE *fhandle = nullptr;
 
-        if ((fhandle = fopen("dbfile.bin", "wbc")) == NULL) {
+        if ((fhandle = fopen("dbfile.bin", "wbc")) == nullptr) {
           rc = FILE_OPEN_ERROR;
 
         } else {
@@ -1094,7 +1094,7 @@ int drop_tpd_from_list(char *tabname) {
 }
 
 tpd_entry *get_tpd_from_list(char *tabname) {
-  tpd_entry *tpd = NULL;
+  tpd_entry *tpd = nullptr;
   tpd_entry *cur = &(g_tpd_list->tpd_start);
   int num_tables = g_tpd_list->num_tables;
   bool found = false;
@@ -1118,20 +1118,20 @@ tpd_entry *get_tpd_from_list(char *tabname) {
 
 table_file_header *get_file_header(char *tab_name) {
 
-  FILE *fhandle = NULL;
+  FILE *fhandle = nullptr;
   struct stat file_stat;
-  table_file_header *table_header = NULL;
+  table_file_header *table_header = nullptr;
   char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
   strcpy(file_name, tab_name);
   strcat(file_name, ".tab");
 
-  if ((fhandle = fopen(file_name, "rbc")) == NULL) {
-    return NULL;
+  if ((fhandle = fopen(file_name, "rbc")) == nullptr) {
+    return nullptr;
 
   } else {
     fstat(fileno(fhandle), &file_stat);
-    table_header = (table_file_header *) calloc(1, file_stat.st_size);
-    fread(table_header, file_stat.st_size, 1, fhandle);
+    table_header = (table_file_header *) calloc(1, (size_t) file_stat.st_size);
+    fread(table_header, (size_t) file_stat.st_size, 1, fhandle);
     return table_header;
   }
 
@@ -1141,7 +1141,7 @@ int sem_select_star(token_list *t_list) {
 
   tpd_entry *tpd = get_tpd_from_list(t_list->next->tok_string);
 
-  if (tpd == NULL) {
+  if (tpd == nullptr) {
     printf("table not found\n");
     return INVALID_TABLE_NAME;
   }
