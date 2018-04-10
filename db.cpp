@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/file.h>
 #include <zconf.h>
+#include <string>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define strcasecmp _stricmp
@@ -1151,21 +1152,24 @@ int sem_select_star(token_list *t_list) {
   // header line 1/3
   printf("+");
   for (int i = 0; i < tpd->num_columns; ++i) {
-    printf("----------------+");
+    printf("%s+", std::string(get_print_size(curr_cd++), '-').c_str());
   }
   printf("\n|");
+  curr_cd = first_cd;
 
   // header line 2/3
   for (int i = 0; i < tpd->num_columns; ++i, curr_cd++) {
-    printf("%-16s|", curr_cd->col_name);
+    printf("%-*s|", get_print_size(curr_cd), curr_cd->col_name);
   }
   printf("\n+");
+  curr_cd = first_cd;
 
   // header line 3/3
   for (int i = 0; i < tpd->num_columns; ++i) {
-    printf("----------------+");
+    printf("%s+", std::string(get_print_size(curr_cd++), '-').c_str());
   }
   printf("\n");
+  curr_cd = first_cd;
 
   table_file_header *file_header = get_file_header(t_list->next->tok_string);
 
@@ -1174,7 +1178,6 @@ int sem_select_star(token_list *t_list) {
     return 0;
   }
 
-  curr_cd = first_cd;
   char *curr_field = (char *) (file_header + 1);
   char *record_head = curr_field;
 
@@ -1185,17 +1188,17 @@ int sem_select_star(token_list *t_list) {
 
     for (int j = 0; j < tpd->num_columns; ++j) {
 
+      int col_print_size = get_print_size(curr_cd);
+
       if ((int) curr_field[0] == 0) {
-        printf("            NULL|");
+        printf("%sNULL|", std::string(col_print_size - 4, ' ').c_str());
         curr_field++;
 
       } else if (curr_cd->col_type == T_CHAR) {
 
         char *data = (char *) calloc(1, (size_t) curr_cd->col_len);
-
         memcpy(data, ++curr_field, (size_t) curr_cd->col_len);
-
-        printf("%-16s|", data);
+        printf("%-*s|", col_print_size, data);
 
       } else if (curr_cd->col_type == T_INT) {
 
@@ -1203,7 +1206,7 @@ int sem_select_star(token_list *t_list) {
         int *data = (int *) calloc(1, sizeof(int));
         memcpy(data, &curr_field[0], sizeof(int));
 
-        printf("%16d|", *data);
+        printf("%*d|", col_print_size, *data);
 
       } else {
         printf("unexpected type");
@@ -1224,10 +1227,14 @@ int sem_select_star(token_list *t_list) {
 
   printf("+");
   for (int i = 0; i < tpd->num_columns; ++i) {
-    printf("----------------+");
+    printf("%s+", std::string(get_print_size(curr_cd++), '-').c_str());
   }
   printf("\n");
 
   return 0;
 
+}
+
+int get_print_size(cd_entry *cd) {
+  return (cd->col_type == T_CHAR || cd->col_type == T_VARCHAR) && cd->col_len > 16 ? cd->col_len : 16;
 }

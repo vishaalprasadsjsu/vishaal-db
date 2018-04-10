@@ -204,3 +204,4 @@ table_file_header *get_file_header(char *tab_name);
 void append_field_to_tab(char *tab_name, token_list *token, int col_len);
 void append_zeros_to_tab(char *tab_name, int how_many_bytes);
 int sem_select_star(token_list *t_list);
+int get_print_size(cd_entry *cd);
