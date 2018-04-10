@@ -783,12 +783,15 @@ int sem_insert_value(token_list *t_list) {
     printf("checking [%s]\n", curr_cd->col_name);
 
     // invalid null column
-    if (curr_cd->not_null && cur_token->tok_value == 16) {
+    if (curr_cd->not_null && cur_token->tok_value == K_NULL) {
       printf("error: [%s] marked not null\n", curr_cd->col_name);
       return INVALID_COLUMN_DEFINITION; // todo -- add a custom error
     }
 
-    // expected string, got something else
+    if (cur_token->tok_value == K_NULL) {
+      continue;
+    }
+
     if (curr_cd->col_type == T_CHAR) {
       if (cur_token->tok_value != STRING_LITERAL) {
         printf("error: expected string for [%s]\n", curr_cd->col_name);
@@ -832,7 +835,7 @@ int sem_insert_value(token_list *t_list) {
   int bytes_written = 0;
 
   for (int i = 0; i < curr_table_tpd->num_columns; ++i, cur_token = cur_token->next->next, curr_cd++) {
-    int size = cur_token->tok_value == INT_LITERAL ? sizeof(int) : curr_cd->col_len;
+    int size = curr_cd->col_len;
     bytes_written += size + 1; // +1 for prefix size
     append_field_to_tab(table_name, cur_token, size);
   }
@@ -858,7 +861,7 @@ void append_zeros_to_tab(char *tab_name, int how_many_bytes) {
   fclose(fhandle);
 }
 
-void append_field_to_tab(char *tab_name, token_list *token, int str_length) {
+void append_field_to_tab(char *tab_name, token_list *token, int col_len) {
 
   FILE *fhandle = NULL;
 
@@ -873,12 +876,16 @@ void append_field_to_tab(char *tab_name, token_list *token, int str_length) {
     int prefix_size = sizeof(int);
     int data = atoi(token->tok_string);
     fwrite(&prefix_size, 1, 1, fhandle); // each field prefixed with length
-    fwrite(&data, sizeof(int), 1, fhandle);
+    fwrite(&data, (size_t) col_len, 1, fhandle);
 
   } else if (token->tok_value == STRING_LITERAL) {
     int prefix_size = (int) strlen(token->tok_string);
     fwrite(&prefix_size, 1, 1, fhandle); // each field prefixed with length
-    fwrite(token->tok_string, str_length, 1, fhandle);
+    fwrite(token->tok_string, (size_t) col_len, 1, fhandle);
+
+  } else if (token->tok_value == K_NULL) {
+    char *data = (char *) calloc(1, (size_t) col_len);
+    fwrite(data, (size_t) col_len + 1, 1, fhandle);
 
   } else {
     printf("not appending field, unexpected type\n");
@@ -1178,27 +1185,31 @@ int sem_select_star(token_list *t_list) {
 
     for (int j = 0; j < tpd->num_columns; ++j) {
 
-      if (curr_cd->col_type == T_CHAR) {
+      if ((int) curr_field[0] == 0) {
+        printf("            NULL|");
+        curr_field++;
+
+      } else if (curr_cd->col_type == T_CHAR) {
 
         char *data = (char *) calloc(1, (size_t) curr_cd->col_len);
 
         memcpy(data, ++curr_field, (size_t) curr_cd->col_len);
 
         printf("%-16s|", data);
-        curr_field += curr_cd->col_len;
 
       } else if (curr_cd->col_type == T_INT) {
 
         curr_field++;
         int *data = (int *) calloc(1, sizeof(int));
         memcpy(data, &curr_field[0], sizeof(int));
-        curr_field += sizeof(int);
 
         printf("%16d|", *data);
 
       } else {
         printf("unexpected type");
       }
+
+      curr_field += curr_cd->col_len;
 
       curr_cd++;
     }
