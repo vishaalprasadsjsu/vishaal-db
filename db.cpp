@@ -295,7 +295,7 @@ int do_semantic(token_list *tok_list) {
 
   } else if ((cur->tok_value == K_INSERT) &&
              ((cur->next != NULL) && (cur->next->tok_value == K_INTO))) {
-    printf("INSERT INTO statement\n");
+    printf("INSERT statement\n");
     cur_cmd = INSERT;
     cur = cur->next->next;
 
@@ -754,6 +754,7 @@ int sem_insert_value(token_list *t_list) {
 
   // make sure next token is keyword "values"
   if (cur_token->tok_class != 1 || cur_token->tok_value != 24) {
+    printf("values keyword missing\n");
     return INVALID_STATEMENT;
   } else {
     cur_token = cur_token->next;
@@ -763,6 +764,7 @@ int sem_insert_value(token_list *t_list) {
 
   // make sure next token is open parenthesis
   if (cur_token->tok_class != 3 || cur_token->tok_value != 70) {
+    printf("missing open parenthesis\n");
     return INVALID_STATEMENT;
   } else {
     open_paren_token = cur_token;
@@ -772,8 +774,6 @@ int sem_insert_value(token_list *t_list) {
   // get cd (tpd_start is a pointer to the table)
   cd_entry *curr_cd = (cd_entry *) ((char *) curr_table_tpd + curr_table_tpd->cd_offset);
   cd_entry *cd_start = curr_cd;
-
-  // read the .tab file
 
   table_file_header *file_header = get_file_header(curr_table_tpd->table_name);
 
@@ -799,6 +799,8 @@ int sem_insert_value(token_list *t_list) {
       if (curr_cd->col_len < strlen(cur_token->tok_string)) {
         printf("error: value too big for [%s]: expected length [%d] but got [%d]\n",
                curr_cd->col_name, curr_cd->col_len, (int) strlen(cur_token->tok_string));
+
+        return INVALID_COLUMN_DEFINITION;
 
       } else {
         printf("adding: [%d] [%s]\n", (int) strlen(cur_token->tok_string), cur_token->tok_string);
