@@ -862,6 +862,9 @@ void append_zeros_to_tab(char *tab_name, int how_many_bytes) {
   fwrite(zeroed_out, (size_t) how_many_bytes, 1, fhandle);
   fflush(fhandle);
   fclose(fhandle);
+
+  free(file_name);
+  free(zeroed_out);
 }
 
 void append_field_to_tab(char *tab_name, token_list *token, int col_len) {
@@ -889,6 +892,7 @@ void append_field_to_tab(char *tab_name, token_list *token, int col_len) {
   } else if (token->tok_value == K_NULL) {
     char *data = (char *) calloc(1, (size_t) col_len);
     fwrite(data, (size_t) col_len + 1, 1, fhandle);
+    free(data);
 
   } else {
     printf("not appending field, unexpected type\n");
@@ -896,6 +900,7 @@ void append_field_to_tab(char *tab_name, token_list *token, int col_len) {
 
   fflush(fhandle);
   fclose(fhandle);
+  free(file_name);
 }
 
 int initialize_tpd_list() {
@@ -1002,6 +1007,8 @@ int create_table_data_file(char *tab_name, table_file_header *table_file_header)
     fflush(fhandle);
     fclose(fhandle);
   }
+
+  free(file_name);
 
   return rc;
 }
@@ -1127,16 +1134,14 @@ table_file_header *get_file_header(char *tab_name) {
   strcpy(file_name, tab_name);
   strcat(file_name, ".tab");
 
-  if ((fhandle = fopen(file_name, "rbc")) == nullptr) {
-    return nullptr;
-
-  } else {
+  if ((fhandle = fopen(file_name, "rbc")) != nullptr) {
     fstat(fileno(fhandle), &file_stat);
     table_header = (table_file_header *) calloc(1, (size_t) file_stat.st_size);
     fread(table_header, (size_t) file_stat.st_size, 1, fhandle);
-    return table_header;
   }
 
+  free(file_name);
+  return table_header;
 }
 
 int sem_select_star(token_list *t_list) {
@@ -1201,40 +1206,39 @@ int sem_select_star(token_list *t_list) {
         char *data = (char *) calloc(1, (size_t) curr_cd->col_len);
         memcpy(data, ++curr_field, (size_t) curr_cd->col_len);
         printf("%-*s|", col_print_size, data);
+        free(data);
 
       } else if (curr_cd->col_type == T_INT) {
 
         curr_field++;
         int *data = (int *) calloc(1, sizeof(int));
         memcpy(data, &curr_field[0], sizeof(int));
-
         printf("%*d|", col_print_size, *data);
+        free(data);
 
       } else {
         printf("unexpected type");
       }
 
       curr_field += curr_cd->col_len;
-
       curr_cd++;
     }
 
     printf("\n");
-
     curr_cd = first_cd;
-
     record_head += file_header->record_size;
-
   }
 
+  // bottom of table
   printf("+");
   for (int i = 0; i < tpd->num_columns; ++i) {
     printf("%s+", std::string(get_print_size(curr_cd++), '-').c_str());
   }
   printf("\n");
 
-  return 0;
+  printf("%d rows selected.\n", file_header->num_records);
 
+  return 0;
 }
 
 int get_print_size(cd_entry *cd) {
