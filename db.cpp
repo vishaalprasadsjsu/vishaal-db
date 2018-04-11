@@ -786,7 +786,7 @@ int sem_insert_value(token_list *t_list) {
     // invalid null column
     if (curr_cd->not_null && cur_token->tok_value == K_NULL) {
       printf("error: [%s] marked not null\n", curr_cd->col_name);
-      return INVALID_INSERT_STATEMENT; // todo -- add a custom error
+      return INVALID_INSERT_STATEMENT;
     }
 
     if (cur_token->tok_value == K_NULL) {
@@ -796,7 +796,7 @@ int sem_insert_value(token_list *t_list) {
     if (curr_cd->col_type == T_CHAR) {
       if (cur_token->tok_value != STRING_LITERAL) {
         printf("error: expected string for [%s]\n", curr_cd->col_name);
-        return INVALID_INSERT_STATEMENT; //todo -- add custom error
+        return INVALID_INSERT_STATEMENT;
       }
 
       // check size
@@ -814,7 +814,7 @@ int sem_insert_value(token_list *t_list) {
 
       if (cur_token->tok_value != INT_LITERAL) {
         printf("error: expected int for [%s]\n", curr_cd->col_name);
-        return INVALID_INSERT_STATEMENT; //todo -- add custom error
+        return INVALID_INSERT_STATEMENT;
 
 //      } else {
 //        printf("adding: [%d] [%d]\n", 4, atoi(cur_token->tok_string));
