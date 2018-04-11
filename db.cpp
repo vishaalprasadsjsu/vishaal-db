@@ -781,7 +781,7 @@ int sem_insert_value(token_list *t_list) {
   // check validity of input
   for (int i = 0; i < curr_table_tpd->num_columns; ++i, cur_token = cur_token->next->next, curr_cd++) {
 
-    printf("checking [%s]\n", curr_cd->col_name);
+//    printf("checking [%s]\n", curr_cd->col_name);
 
     // invalid null column
     if (curr_cd->not_null && cur_token->tok_value == K_NULL) {
@@ -806,8 +806,8 @@ int sem_insert_value(token_list *t_list) {
 
         return INVALID_COLUMN_DEFINITION;
 
-      } else {
-        printf("adding: [%d] [%s]\n", (int) strlen(cur_token->tok_string), cur_token->tok_string);
+//      } else {
+//        printf("adding: [%d] [%s]\n", (int) strlen(cur_token->tok_string), cur_token->tok_string);
       }
 
     } else if (curr_cd->col_type == T_INT) {
@@ -816,8 +816,8 @@ int sem_insert_value(token_list *t_list) {
         printf("error: expected int for [%s]\n", curr_cd->col_name);
         return INVALID_COLUMN_DEFINITION; //todo -- add custom error
 
-      } else {
-        printf("adding: [%d] [%d]\n", 4, atoi(cur_token->tok_string));
+//      } else {
+//        printf("adding: [%d] [%d]\n", 4, atoi(cur_token->tok_string));
       }
     }
   }
@@ -844,6 +844,8 @@ int sem_insert_value(token_list *t_list) {
   if (file_header->record_size > bytes_written) {
     append_zeros_to_tab(table_name, file_header->record_size - bytes_written);
   }
+
+  printf("%s.tab size: %d. Number of records: %d", table_name, file_header->file_size, file_header->num_records);
 
   return rc;
 }
