@@ -1238,6 +1238,8 @@ int sem_select_star(token_list *t_list) {
 
   printf("%d rows selected.\n", file_header->num_records);
 
+  free(file_header);
+
   return 0;
 }
 
