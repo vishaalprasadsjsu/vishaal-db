@@ -173,6 +173,7 @@ typedef enum error_return_codes
   INVALID_COLUMN_DEFINITION,  // -390
   INVALID_COLUMN_LENGTH,      // -389
   INVALID_REPORT_FILE_NAME,   // -388
+  INVALID_INSERT_STATEMENT,   // -397
   /* Must add all the possible errors from I/U/D + SELECT here */
   FILE_OPEN_ERROR = -299,     // -299
   DBFILE_CORRUPTION,          // -298

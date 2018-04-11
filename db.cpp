@@ -786,7 +786,7 @@ int sem_insert_value(token_list *t_list) {
     // invalid null column
     if (curr_cd->not_null && cur_token->tok_value == K_NULL) {
       printf("error: [%s] marked not null\n", curr_cd->col_name);
-      return INVALID_COLUMN_DEFINITION; // todo -- add a custom error
+      return INVALID_INSERT_STATEMENT; // todo -- add a custom error
     }
 
     if (cur_token->tok_value == K_NULL) {
@@ -796,7 +796,7 @@ int sem_insert_value(token_list *t_list) {
     if (curr_cd->col_type == T_CHAR) {
       if (cur_token->tok_value != STRING_LITERAL) {
         printf("error: expected string for [%s]\n", curr_cd->col_name);
-        return INVALID_COLUMN_DEFINITION; //todo -- add custom error
+        return INVALID_INSERT_STATEMENT; //todo -- add custom error
       }
 
       // check size
@@ -804,7 +804,7 @@ int sem_insert_value(token_list *t_list) {
         printf("error: value too big for [%s]: expected length [%d] but got [%d]\n",
                curr_cd->col_name, curr_cd->col_len, (int) strlen(cur_token->tok_string));
 
-        return INVALID_COLUMN_DEFINITION;
+        return INVALID_INSERT_STATEMENT;
 
 //      } else {
 //        printf("adding: [%d] [%s]\n", (int) strlen(cur_token->tok_string), cur_token->tok_string);
@@ -814,7 +814,7 @@ int sem_insert_value(token_list *t_list) {
 
       if (cur_token->tok_value != INT_LITERAL) {
         printf("error: expected int for [%s]\n", curr_cd->col_name);
-        return INVALID_COLUMN_DEFINITION; //todo -- add custom error
+        return INVALID_INSERT_STATEMENT; //todo -- add custom error
 
 //      } else {
 //        printf("adding: [%d] [%d]\n", 4, atoi(cur_token->tok_string));
@@ -845,7 +845,7 @@ int sem_insert_value(token_list *t_list) {
     append_zeros_to_tab(table_name, file_header->record_size - bytes_written);
   }
 
-  printf("%s.tab size: %d. Number of records: %d", table_name, file_header->file_size, file_header->num_records);
+  printf("%s.tab size: %d. Number of records: %d\n", table_name, file_header->file_size, file_header->num_records);
 
   return rc;
 }
