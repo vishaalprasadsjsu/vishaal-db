@@ -1,8 +1,13 @@
+#!/usr/bin/env bash
 
 rm *.tab; 
 
-rm dbfile.db; 
+rm dbfile.db;
 
-c++ -m32 db.cpp
+rm ./db
+
+c++ -m32 db.cpp -o db
+
+/usr/bin/clear
 
 echo "done"
