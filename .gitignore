@@ -114,3 +114,4 @@ fabric.properties
 *.bin
 *.xxd
 *.tab
+db
