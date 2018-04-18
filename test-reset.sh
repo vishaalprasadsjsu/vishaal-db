@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-rm *.tab; 
+rm *.tab
 
-rm dbfile.db;
+rm dbfile.bin
 
 rm ./db
 

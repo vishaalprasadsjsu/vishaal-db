@@ -49,8 +49,8 @@ int main(int argc, char **argv) {
     if (rc) {
       tok_ptr = tok_list;
       while (tok_ptr != NULL) {
-        if ((tok_ptr->tok_class == error) ||
-            (tok_ptr->tok_value == INVALID)) {
+        if ((tok_ptr->tok_class == error)
+            || (tok_ptr->tok_value == INVALID)) {
           printf("\nError in the string: %s\n", tok_ptr->tok_string);
           printf("rc=%d\n", rc);
           break;
