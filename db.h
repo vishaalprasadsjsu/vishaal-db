@@ -3,6 +3,8 @@ db.h - This file contains all the structures, defines, and function
   prototype for the db.exe program.
 *********************************************************************/
 
+#include <stdio.h>
+
 #define MAX_IDENT_LEN   16
 #define MAX_NUM_COL     16
 #define MAX_TOK_LEN     32
@@ -188,7 +190,10 @@ int sem_create_table(token_list *t_list);
 int sem_drop_table(token_list *t_list);
 int sem_list_tables();
 int sem_list_schema(token_list *t_list);
+int sem_select_star(token_list *t_list);
 int sem_insert_value(token_list *cur_token);
+int sem_update_value(token_list *cur_token);
+int sem_delete_value(token_list *cur_token);
 
 /*
   Keep a global list of tpd - in real life, this will be stored
@@ -200,9 +205,11 @@ int add_tpd_to_list(tpd_entry *tpd);
 int drop_tpd_from_list(char *tabname);
 tpd_entry* get_tpd_from_list(char *tabname);
 
-int create_table_data_file(char *tab_name, table_file_header *table_file_header);
+int create_table_data_file(char *tab_name, table_file_header *table_file_header, size_t size);
 table_file_header *get_file_header(char *tab_name);
 void append_field_to_tab(char *tab_name, token_list *token, int col_len);
 void append_zeros_to_tab(char *tab_name, int how_many_bytes);
-int sem_select_star(token_list *t_list);
 int get_print_size(cd_entry *cd);
+int delete_tab_file(char *tab_name);
+bool satisfies_condition(char *field, int operator_type, token_list *data_value_token, int col_len);
+cd_entry *get_cd(char *table_name, char *col_name);

@@ -306,6 +306,12 @@ int do_semantic(token_list *tok_list) {
     cur_cmd = SELECT;
     cur = cur->next->next;
 
+  } else if ((cur->tok_value == K_DELETE) &&
+             ((cur->next != NULL) && (cur->next->tok_value == K_FROM))) {
+    printf("DELETE statement\n");
+    cur_cmd = DELETE;
+    cur = cur->next->next;
+
   } else {
     printf("Invalid statement\n");
     rc = cur_cmd;
@@ -331,7 +337,11 @@ int do_semantic(token_list *tok_list) {
       case SELECT:
         rc = sem_select_star(cur);
         break;
-        // default: /* no action */
+      case DELETE:
+        rc = sem_delete_value(cur);
+        break;
+      default:
+        break;
     }
   }
 
@@ -354,9 +364,10 @@ int sem_create_table(token_list *t_list) {
   memset(&tab_file_header, '\0', sizeof(table_file_header));
   cur = t_list;
 
-  if ((cur->tok_class != keyword) &&
-      (cur->tok_class != identifier) &&
-      (cur->tok_class != type_name)) {
+  if ((cur->tok_class != keyword)
+      && (cur->tok_class != identifier)
+      && (cur->tok_class != type_name)) {
+
     // Error
     rc = INVALID_TABLE_NAME;
     cur->tok_value = INVALID;
@@ -558,7 +569,7 @@ int sem_create_table(token_list *t_list) {
 
             rc = add_tpd_to_list(new_entry);
 
-            create_table_data_file(new_entry->table_name, &tab_file_header);
+            create_table_data_file(new_entry->table_name, &tab_file_header, sizeof(table_file_header));
 
             free(new_entry);
           }
@@ -828,7 +839,7 @@ int sem_insert_value(token_list *t_list) {
 
   file_header->file_size += file_header->record_size;
   file_header->num_records++;
-  create_table_data_file(table_name, file_header); // overwrites at the top
+  create_table_data_file(table_name, file_header, sizeof(table_file_header)); // overwrites at the top
 
   curr_cd = cd_start;
   cur_token = open_paren_token->next;
@@ -981,7 +992,7 @@ int add_tpd_to_list(tpd_entry *tpd) {
   return rc;
 }
 
-int create_table_data_file(char *tab_name, table_file_header *table_file_header) {
+int create_table_data_file(char *tab_name, table_file_header *table_file_header, size_t size) {
   FILE *fhandle = nullptr;
 
   int rc = 0;
@@ -1003,7 +1014,9 @@ int create_table_data_file(char *tab_name, table_file_header *table_file_header)
 
   } else {
     rewind(fhandle);
-    fwrite(table_file_header, sizeof(*table_file_header), 1, fhandle);
+
+    fwrite(table_file_header, (size_t) size, 1, fhandle);
+
     fflush(fhandle);
     fclose(fhandle);
   }
@@ -1191,7 +1204,7 @@ int sem_select_star(token_list *t_list) {
   for (int i = 0; i < file_header->num_records; ++i) {
 
     printf("|");
-    curr_field = record_head;
+    curr_field = record_head; // redundant for first iteration
 
     for (int j = 0; j < tpd->num_columns; ++j) {
 
@@ -1243,6 +1256,178 @@ int sem_select_star(token_list *t_list) {
   return 0;
 }
 
+int sem_delete_value(token_list *cur_token) {
+
+  int rc = 0;
+  char *table_name = cur_token->tok_string;
+  tpd_entry *curr_table_tpd = get_tpd_from_list(table_name);
+
+  if (curr_table_tpd == nullptr) {
+    printf("table not found\n");
+    return TABLE_NOT_EXIST;
+  }
+
+  cd_entry *first_cd = (cd_entry *) ((char *) curr_table_tpd + curr_table_tpd->cd_offset);
+
+  cur_token = cur_token->next;
+  table_file_header *file_header = get_file_header(table_name);
+
+  // "delete from table" --> delete all rows
+  if (cur_token->tok_class == terminator) {
+
+    int num_rows_deleted = file_header->num_records;
+
+    file_header->file_size = sizeof(table_file_header_def);
+    file_header->num_records = 0;
+    file_header->record_offset = 0;
+
+    delete_tab_file(table_name);
+    create_table_data_file(table_name, file_header, sizeof(table_file_header));
+
+    printf("%d rows deleted.\n", num_rows_deleted);
+
+  } else {
+
+    if (cur_token->tok_value != K_WHERE || cur_token->next == nullptr) {
+      return INVALID_STATEMENT; //todo :: invalid delete statement
+    }
+
+    cur_token = cur_token->next;
+    char *col_name = cur_token->tok_string;
+    cur_token = cur_token->next;
+
+    if (cur_token == nullptr
+        || (cur_token->tok_value != S_EQUAL
+            && cur_token->tok_value != S_LESS
+            && cur_token->tok_value != S_GREATER
+            && cur_token->next == nullptr)) {
+
+      return INVALID_STATEMENT;
+    }
+
+    int compare_type = cur_token->tok_value;
+    cur_token = cur_token->next;
+    token_list *compare_value_token = cur_token;
+
+    cd_entry *compare_cd = get_cd(table_name, col_name);
+
+    if (compare_cd == nullptr) {
+      return COLUMN_NOT_EXIST;
+    }
+
+    if ((compare_cd->col_type == T_INT && compare_value_token->tok_value != INT_LITERAL)
+        || (compare_cd->col_type == T_CHAR && compare_value_token->tok_value != STRING_LITERAL)) {
+
+      return INVALID_STATEMENT; // todo :: invalid compare value type
+    }
+
+    // calculate field offset
+
+    int field_offset = 1; // default offset 1 for size
+    cd_entry *cd_iter = first_cd;
+    for (int i = 0; i < compare_cd->col_id; ++i, ++cd_iter) {
+      field_offset += cd_iter->col_len + 1;
+    }
+
+    int num_rows_deleted = 0;
+
+    char *first_record = (char *) file_header + file_header->record_offset;
+    char *cur_record = first_record;
+
+    int i = 0;
+    while (i < file_header->num_records) {
+
+      if (satisfies_condition(
+          (cur_record + field_offset), compare_type, compare_value_token, compare_cd->col_len)) {
+
+        // only copy if not last row
+        if (i != file_header->num_records - 1) {
+          char *last_row = first_record + (file_header->record_size * (file_header->num_records - 1));
+          memcpy(cur_record, last_row, (size_t) file_header->record_size);
+        }
+
+        file_header->num_records--;
+        num_rows_deleted++;
+      } else {
+        i++;
+      }
+
+      cur_record += file_header->record_size;
+
+    }
+
+    file_header->file_size =
+        sizeof(table_file_header_def) + (file_header->num_records * file_header->record_size);
+
+    printf("%d rows deleted.\n", num_rows_deleted);
+
+    delete_tab_file(table_name);
+    create_table_data_file(table_name, file_header, (size_t) file_header->file_size);
+  }
+
+  free(file_header);
+  return rc;
+}
+
+bool satisfies_condition(char *field, int operator_type, token_list *data_value_token, int col_len) {
+
+  int cmp_val;
+
+  if (data_value_token->tok_value == INT_LITERAL) {
+    int *data = (int *) calloc(1, sizeof(int));
+    memcpy(data, field, sizeof(int));
+    cmp_val = *data - atoi(data_value_token->tok_string);
+    free(data);
+  } else {
+    char *data = (char *) calloc(1, (size_t) col_len);
+    memcpy(data, field, (size_t) col_len);
+    cmp_val = strcmp(data, data_value_token->tok_string);
+    free(data);
+  }
+
+  switch (operator_type) {
+    case S_EQUAL:
+      return !cmp_val;
+    case S_LESS:
+      return cmp_val < 0;
+    case S_GREATER:
+      return cmp_val > 0;
+    default:
+      return false;
+  }
+}
+
+cd_entry *get_cd(char *table_name, char *col_name) {
+
+  tpd_entry *this_tpd = get_tpd_from_list(table_name);
+
+  if (this_tpd == nullptr) {
+    return nullptr;
+  }
+
+  cd_entry *curr_cd = (cd_entry *) ((char *) this_tpd + this_tpd->cd_offset);
+
+  for (int i = 0; i < this_tpd->num_columns; ++i, ++curr_cd) {
+    if (!strcmp(curr_cd->col_name, col_name)) {
+      return curr_cd;
+    }
+  }
+
+  return nullptr;
+}
+
 int get_print_size(cd_entry *cd) {
-  return (cd->col_type == T_CHAR || cd->col_type == T_VARCHAR) && cd->col_len > 16 ? cd->col_len : 16;
+  return (cd->col_type == T_CHAR) && cd->col_len > 16 ? cd->col_len : 16;
+}
+
+int delete_tab_file(char *tab_name) {
+
+  char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
+  strcpy(file_name, tab_name);
+  strcat(file_name, ".tab");
+
+  free(file_name);
+
+  return remove(file_name);
+
 }
