@@ -1348,11 +1348,11 @@ int sem_delete_value(token_list *cur_token) {
 
         file_header->num_records--;
         num_rows_deleted++;
+
       } else {
         i++;
+        cur_record += file_header->record_size;
       }
-
-      cur_record += file_header->record_size;
 
     }
 
