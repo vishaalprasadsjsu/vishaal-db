@@ -1288,45 +1288,16 @@ int sem_delete_value(token_list *cur_token) {
 
   } else {
 
-    if (cur_token->tok_value != K_WHERE || cur_token->next == nullptr) {
-      return INVALID_STATEMENT; //todo :: invalid delete statement
-    }
+    int comp_type = 0;
+    token_list *compare_value_token = nullptr;
+    cd_entry *compare_cd = nullptr;
+    int comp_field_offset = 0;
 
-    cur_token = cur_token->next;
-    char *col_name = cur_token->tok_string;
-    cur_token = cur_token->next;
+    rc = get_compare_vals(cur_token, table_name, first_cd, &comp_type,
+                          &compare_value_token, &compare_cd, &comp_field_offset);
 
-    if (cur_token == nullptr
-        || (cur_token->tok_value != S_EQUAL
-            && cur_token->tok_value != S_LESS
-            && cur_token->tok_value != S_GREATER
-            && cur_token->next == nullptr)) {
-
-      return INVALID_STATEMENT;
-    }
-
-    int compare_type = cur_token->tok_value;
-    cur_token = cur_token->next;
-    token_list *compare_value_token = cur_token;
-
-    cd_entry *compare_cd = get_cd(table_name, col_name);
-
-    if (compare_cd == nullptr) {
-      return COLUMN_NOT_EXIST;
-    }
-
-    if ((compare_cd->col_type == T_INT && compare_value_token->tok_value != INT_LITERAL)
-        || (compare_cd->col_type == T_CHAR && compare_value_token->tok_value != STRING_LITERAL)) {
-
-      return INVALID_STATEMENT; // todo :: invalid compare value type
-    }
-
-    // calculate field offset
-
-    int field_offset = 1; // default offset 1 for size
-    cd_entry *cd_iter = first_cd;
-    for (int i = 0; i < compare_cd->col_id; ++i, ++cd_iter) {
-      field_offset += cd_iter->col_len + 1;
+    if (rc) {
+      return rc;
     }
 
     int num_rows_deleted = 0;
@@ -1338,7 +1309,7 @@ int sem_delete_value(token_list *cur_token) {
     while (i < file_header->num_records) {
 
       if (satisfies_condition(
-          (cur_record + field_offset), compare_type, compare_value_token, compare_cd->col_len)) {
+          (cur_record + comp_field_offset), comp_type, compare_value_token, compare_cd->col_len)) {
 
         // only copy if not last row
         if (i != file_header->num_records - 1) {
@@ -1367,6 +1338,50 @@ int sem_delete_value(token_list *cur_token) {
 
   free(file_header);
   return rc;
+}
+
+int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, int *comp_type,
+                     token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset) {
+
+  if (cur_token->tok_value != K_WHERE || cur_token->next == nullptr) {
+    return INVALID_STATEMENT;
+  }
+
+  cur_token = cur_token->next;
+  char *col_name = cur_token->tok_string;
+  cur_token = cur_token->next;
+
+  if (cur_token == nullptr || cur_token->next == nullptr
+      || (cur_token->tok_value != S_EQUAL
+          && cur_token->tok_value != S_LESS
+          && cur_token->tok_value != S_GREATER))  {
+
+    return INVALID_STATEMENT;
+  }
+
+  *comp_type = cur_token->tok_value;
+  cur_token = cur_token->next;
+  *comp_value_token = cur_token;
+
+  *compare_cd = get_cd(table_name, col_name);
+
+  if (*compare_cd == nullptr) {
+    return COLUMN_NOT_EXIST;
+  }
+
+  if (((*compare_cd)->col_type == T_INT && (*comp_value_token)->tok_value != INT_LITERAL)
+      || ((*compare_cd)->col_type == T_CHAR && (*comp_value_token)->tok_value != STRING_LITERAL)) {
+
+    return INVALID_STATEMENT; // todo :: invalid compare value type
+  }
+
+  *comp_field_offset = 1;
+  cd_entry *cd_iter = first_cd;
+  for (int i = 0; i < (*compare_cd)->col_id; ++i, ++cd_iter) {
+    *comp_field_offset += cd_iter->col_len + 1;
+  }
+
+  return 0;
 }
 
 bool satisfies_condition(char *field, int operator_type, token_list *data_value_token, int col_len) {

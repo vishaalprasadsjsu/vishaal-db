@@ -213,3 +213,5 @@ int get_print_size(cd_entry *cd);
 int delete_tab_file(char *tab_name);
 bool satisfies_condition(char *field, int operator_type, token_list *data_value_token, int col_len);
 cd_entry *get_cd(char *table_name, char *col_name);
+int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, int *comp_type,
+                     token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset);
