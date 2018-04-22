@@ -613,6 +613,7 @@ int sem_drop_table(token_list *t_list) {
         cur->tok_value = INVALID;
       } else {
         /* Found a valid tpd, drop it from tpd list */
+        delete_tab_file(cur->tok_string);
         rc = drop_tpd_from_list(cur->tok_string);
       }
     }
@@ -1496,6 +1497,7 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
 
     return INVALID_STATEMENT;
   }
+
 
   *comp_type = cur_token->tok_value;
   cur_token = cur_token->next;
