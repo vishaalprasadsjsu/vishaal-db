@@ -34,13 +34,13 @@ int main(int argc, char **argv) {
   } else {
     rc = get_token(argv[1], &tok_list);
 
-    /* Test code */
-    tok_ptr = tok_list;
-    while (tok_ptr != NULL) {
-      printf("%16s \t%d \t %d\n", tok_ptr->tok_string, tok_ptr->tok_class,
-             tok_ptr->tok_value);
-      tok_ptr = tok_ptr->next;
-    }
+//    /* Test code */
+//    tok_ptr = tok_list;
+//    while (tok_ptr != NULL) {
+//      printf("%16s \t%d \t %d\n", tok_ptr->tok_string, tok_ptr->tok_class,
+//             tok_ptr->tok_value);
+//      tok_ptr = tok_ptr->next;
+//    }
 
     if (!rc) {
       rc = do_semantic(tok_list);
@@ -312,6 +312,13 @@ int do_semantic(token_list *tok_list) {
     cur_cmd = DELETE;
     cur = cur->next->next;
 
+  } else if (cur->tok_value == K_UPDATE && cur->next != nullptr
+             && cur->next->next != nullptr && cur->next->next->tok_value == K_SET) {
+
+    printf("UPDATE statement\n");
+    cur_cmd = UPDATE;
+    cur = cur->next;
+
   } else {
     printf("Invalid statement\n");
     rc = cur_cmd;
@@ -339,6 +346,9 @@ int do_semantic(token_list *tok_list) {
         break;
       case DELETE:
         rc = sem_delete_value(cur);
+        break;
+      case UPDATE:
+        rc = sem_update_value(cur);
         break;
       default:
         break;
@@ -792,8 +802,6 @@ int sem_insert_value(token_list *t_list) {
   // check validity of input
   for (int i = 0; i < curr_table_tpd->num_columns; ++i, cur_token = cur_token->next->next, curr_cd++) {
 
-//    printf("checking [%s]\n", curr_cd->col_name);
-
     // invalid null column
     if (curr_cd->not_null && cur_token->tok_value == K_NULL) {
       printf("error: [%s] marked not null\n", curr_cd->col_name);
@@ -816,9 +824,6 @@ int sem_insert_value(token_list *t_list) {
                curr_cd->col_name, curr_cd->col_len, (int) strlen(cur_token->tok_string));
 
         return INVALID_INSERT_STATEMENT;
-
-//      } else {
-//        printf("adding: [%d] [%s]\n", (int) strlen(cur_token->tok_string), cur_token->tok_string);
       }
 
     } else if (curr_cd->col_type == T_INT) {
@@ -826,9 +831,6 @@ int sem_insert_value(token_list *t_list) {
       if (cur_token->tok_value != INT_LITERAL) {
         printf("error: expected int for [%s]\n", curr_cd->col_name);
         return INVALID_INSERT_STATEMENT;
-
-//      } else {
-//        printf("adding: [%d] [%d]\n", 4, atoi(cur_token->tok_string));
       }
     }
   }
@@ -867,7 +869,7 @@ void append_zeros_to_tab(char *tab_name, int how_many_bytes) {
   char *file_name = (char *) calloc(1, (int) strlen(tab_name) + 4);
   strcpy(file_name, tab_name);
   strcat(file_name, ".tab");
-  char *zeroed_out = (char *) calloc(1, how_many_bytes);
+  char *zeroed_out = (char *) calloc(1, (size_t) how_many_bytes);
 
   fhandle = fopen(file_name, "a+b");
   fwrite(zeroed_out, (size_t) how_many_bytes, 1, fhandle);
@@ -1252,7 +1254,130 @@ int sem_select_star(token_list *t_list) {
   printf("%d rows selected.\n", file_header->num_records);
 
   free(file_header);
+  return 0;
+}
 
+int sem_update_value(token_list *cur_token) {
+  int rc = 0;
+  char *table_name = cur_token->tok_string;
+  tpd_entry *curr_table_tpd = get_tpd_from_list(table_name);
+
+  if (curr_table_tpd == nullptr) {
+    return TABLE_NOT_EXIST;
+  }
+
+  cur_token = cur_token->next->next; // do_semantic already checked for "SET"
+
+  char *set_col_name = cur_token->tok_string;
+
+  cd_entry *first_cd = (cd_entry *) ((char *) curr_table_tpd + curr_table_tpd->cd_offset);
+  cd_entry *set_cd = get_cd(table_name, set_col_name);
+
+  cur_token = cur_token->next;
+
+  if (cur_token->tok_value != S_EQUAL || cur_token->next == nullptr) {
+    return INVALID_STATEMENT; // todo :: invalid insert statement
+  }
+
+  cur_token = cur_token->next;
+
+  bool copying_int = (cur_token->tok_value == INT_LITERAL);
+  int set_value_size = (copying_int) ? sizeof(int) : (int) strlen(cur_token->tok_string);
+  token_list *set_data_token = cur_token;
+
+  // check against cd col length, type, and not null
+  if ((set_data_token->tok_value == INT_LITERAL && set_cd->col_type != T_INT)
+      || (set_data_token->tok_value == STRING_LITERAL && set_cd->col_type != T_CHAR)) {
+    printf("Wrong col type (int vs char)\n");
+    rc = INVALID_STATEMENT;
+  }
+
+  if ((set_cd->col_type == T_CHAR)
+      && (set_cd->col_len < strlen(set_data_token->tok_string))) {
+    printf("String input too big\n");
+    rc = INVALID_STATEMENT;
+  }
+
+  if (set_cd->not_null && set_data_token->tok_value == K_NULL) {
+    printf("NULL not allowed\n");
+    rc = INVALID_STATEMENT;
+  }
+
+  if (rc) {
+    printf("0 rows updated.\n");
+    return rc;
+  }
+
+  table_file_header *table_header = get_file_header(table_name);
+
+  char *first_record = ((char *) table_header) + table_header->record_offset;
+
+  int field_offset = 0;
+  cd_entry *cd_iter = first_cd;
+  for (int i = 0; i < set_cd->col_id; ++i, ++cd_iter) {
+    field_offset += cd_iter->col_len + 1;
+  }
+
+  char *curr_set_field = first_record + field_offset; // points to size [SIZE][DATA]
+
+  if (cur_token->next->tok_class == terminator) {
+
+    for (int i = 0; i < table_header->num_records; ++i) {
+      memcpy(curr_set_field, &set_value_size, sizeof(int)); // write new size
+      if (copying_int) {
+        memcpy(curr_set_field + 1, set_data_token->tok_string, sizeof(int));
+      } else {
+        memset(curr_set_field + 1, '\0', (size_t) set_cd->col_len);
+        memcpy(curr_set_field + 1, set_data_token->tok_string, (size_t) set_cd->col_len);
+      }
+      curr_set_field += table_header->record_size;
+    }
+
+    printf("%d rows updated.\n", table_header->num_records);
+
+  } else {
+
+    int comp_type = 0;
+    token_list *compare_value_token = nullptr;
+    cd_entry *compare_cd = nullptr;
+    int comp_field_offset = 0;
+
+    rc = get_compare_vals(cur_token->next, table_name, first_cd, &comp_type,
+                          &compare_value_token, &compare_cd, &comp_field_offset);
+
+    if (rc) return rc;
+
+    int num_rows_updated = 0;
+    char *curr_compare_field = first_record + comp_field_offset; // points to DATA (not size prefix)
+
+    for (int i = 0; i < table_header->num_records; ++i) {
+      if (satisfies_condition(curr_compare_field, comp_type,
+                              compare_value_token, compare_cd->col_len)) {
+
+        num_rows_updated++;
+        memcpy(curr_set_field, &set_value_size, 1); // write new size
+        if (copying_int) {
+          int val = atoi(set_data_token->tok_string);
+          memcpy(curr_set_field + 1, &val, sizeof(int));
+        } else {
+          memset(curr_set_field + 1, '\0', (size_t) set_cd->col_len);
+          memcpy(curr_set_field + 1, set_data_token->tok_string,
+                 strlen(set_data_token->tok_string));
+        }
+
+      }
+      curr_set_field += table_header->record_size;
+      curr_compare_field += table_header->record_size;
+    }
+
+    printf("%d rows updated.\n", num_rows_updated);
+  }
+
+  // copy data back
+  delete_tab_file(table_name);
+  create_table_data_file(table_name, table_header, (size_t) table_header->file_size);
+
+  free(table_header);
   return 0;
 }
 
@@ -1296,9 +1421,7 @@ int sem_delete_value(token_list *cur_token) {
     rc = get_compare_vals(cur_token, table_name, first_cd, &comp_type,
                           &compare_value_token, &compare_cd, &comp_field_offset);
 
-    if (rc) {
-      return rc;
-    }
+    if (rc) return rc;
 
     int num_rows_deleted = 0;
 
@@ -1442,7 +1565,5 @@ int delete_tab_file(char *tab_name) {
   strcat(file_name, ".tab");
 
   free(file_name);
-
   return remove(file_name);
-
 }
