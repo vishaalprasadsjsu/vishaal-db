@@ -1281,9 +1281,20 @@ int sem_update_value(token_list *cur_token) {
 
   cur_token = cur_token->next;
 
-  bool copying_int = (cur_token->tok_value == INT_LITERAL);
-  int set_value_size = (copying_int) ? sizeof(int) : (int) strlen(cur_token->tok_string);
   token_list *set_data_token = cur_token;
+  int set_value_size;
+
+  switch (cur_token->tok_value) {
+    case INT_LITERAL:
+      set_value_size = sizeof(int);
+      break;
+    case STRING_LITERAL:
+      set_value_size = (int) strlen(cur_token->tok_string);
+      break;
+    default:
+      set_value_size = 0;
+      break;
+  }
 
   // check against cd col length, type, and not null
   if ((set_data_token->tok_value == INT_LITERAL && set_cd->col_type != T_INT)
@@ -1292,8 +1303,8 @@ int sem_update_value(token_list *cur_token) {
     rc = INVALID_STATEMENT;
   }
 
-  if ((set_cd->col_type == T_CHAR)
-      && (set_cd->col_len < strlen(set_data_token->tok_string))) {
+  if ((set_cd->col_type == T_CHAR) && ((set_cd->col_len < strlen(set_data_token->tok_string)
+                                        && set_data_token->tok_value != K_NULL))) {
     printf("String input too big\n");
     rc = INVALID_STATEMENT;
   }
@@ -1323,12 +1334,15 @@ int sem_update_value(token_list *cur_token) {
   if (cur_token->next->tok_class == terminator) {
 
     for (int i = 0; i < table_header->num_records; ++i) {
-      memcpy(curr_set_field, &set_value_size, sizeof(int)); // write new size
-      if (copying_int) {
-        memcpy(curr_set_field + 1, set_data_token->tok_string, sizeof(int));
+      memcpy(curr_set_field, &set_value_size, 1); // write new size
+      if (set_data_token->tok_value == INT_LITERAL) {
+        int val = (set_data_token->tok_value == K_NULL) ? 0 : atoi(set_data_token->tok_string);
+        memcpy(curr_set_field + 1, &val, sizeof(int));
       } else {
         memset(curr_set_field + 1, '\0', (size_t) set_cd->col_len);
-        memcpy(curr_set_field + 1, set_data_token->tok_string, (size_t) set_cd->col_len);
+        if (set_data_token->tok_value != K_NULL) {
+          memcpy(curr_set_field + 1, set_data_token->tok_string, strlen(set_data_token->tok_string));
+        }
       }
       curr_set_field += table_header->record_size;
     }
@@ -1356,13 +1370,14 @@ int sem_update_value(token_list *cur_token) {
 
         num_rows_updated++;
         memcpy(curr_set_field, &set_value_size, 1); // write new size
-        if (copying_int) {
-          int val = atoi(set_data_token->tok_string);
+        if (set_data_token->tok_value == INT_LITERAL) {
+          int val = (set_data_token->tok_value == K_NULL) ? 0 : atoi(set_data_token->tok_string);
           memcpy(curr_set_field + 1, &val, sizeof(int));
         } else {
           memset(curr_set_field + 1, '\0', (size_t) set_cd->col_len);
-          memcpy(curr_set_field + 1, set_data_token->tok_string,
-                 strlen(set_data_token->tok_string));
+          if (set_data_token->tok_value != K_NULL) {
+            memcpy(curr_set_field + 1, set_data_token->tok_string, strlen(set_data_token->tok_string));
+          }
         }
 
       }
@@ -1492,8 +1507,9 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
     return COLUMN_NOT_EXIST;
   }
 
-  if (((*compare_cd)->col_type == T_INT && (*comp_value_token)->tok_value != INT_LITERAL)
-      || ((*compare_cd)->col_type == T_CHAR && (*comp_value_token)->tok_value != STRING_LITERAL)) {
+  if (((*comp_value_token)->tok_value != K_NULL)
+      && (((*compare_cd)->col_type == T_INT && (*comp_value_token)->tok_value != INT_LITERAL)
+      || ((*compare_cd)->col_type == T_CHAR && (*comp_value_token)->tok_value != STRING_LITERAL))) {
 
     return INVALID_STATEMENT; // todo :: invalid compare value type
   }
@@ -1508,6 +1524,10 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
 }
 
 bool satisfies_condition(char *field, int operator_type, token_list *data_value_token, int col_len) {
+
+  if (data_value_token->tok_value == K_NULL) {
+    return *(field - 1) == '\0';
+  }
 
   int cmp_val;
 
