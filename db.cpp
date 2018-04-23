@@ -1224,25 +1224,16 @@ int sem_select(token_list *t_list) {
 
   int* cols_to_print = (int *) calloc((size_t) cols_print_count, sizeof(int)); // indices of which cols to print
 
+  // populare cols_to_print
   for (int i = 0; i < cols_print_count; ++i) {
-    // iterating through cols_to_print
 
     if (first_col_token->tok_value == S_STAR) {
       cols_to_print[i] = i;
-    } else {
 
-      // iterate through CDs to find matching name
-      bool found = false;
-      for (int j = 0; j < tpd->num_columns && !found; ++j, ++curr_cd) {
-        if (!strcmp(cur_token->tok_string, curr_cd->col_name)) {
-          cols_to_print[i] = curr_cd->col_id;
-          found = true;
-        }
-      }
-      if (!found) {
-        return INVALID_STATEMENT; // todo :: check for pending free() calls
-      }
-      curr_cd = first_cd;
+    } else {
+      curr_cd = get_cd(table_name_token->tok_string, cur_token->tok_string);
+      if (curr_cd == nullptr) return INVALID_STATEMENT;
+      cols_to_print[i] = curr_cd->col_id;
       cur_token = cur_token->next->next;
     }
   }
@@ -1337,9 +1328,36 @@ int sem_select(token_list *t_list) {
 
 int sem_select_agg(token_list *t_list) {
 
-  // todo :: implement this
-  printf("select agg triggered");
-  return -1;
+  int rc = -1;
+
+  // SELECT AVG   (int_col)   FROM tab   (WHERE ...)
+  // SELECT SUM   (int_col)   FROM tab   (WHERE ...)
+  // SELECT COUNT (any_col)   FROM tab   (WHERE ...)
+  // SELECT COUNT (   *   )   FROM tab     ''
+
+  // // token_list *cur_token = t_list;
+  // // token_list *agg_token = cur_token;
+  // // cur_token = cur_token->next;
+
+  // // if (cur_token->tok_value != S_LEFT_PAREN) {
+  // //   return INVALID_STATEMENT;
+  // // }
+
+  // // cur_token = cur_token->next;
+  // // token_list *sel_col_token = cur_token;
+  // // cur_token = cur_token->next;
+
+  // // if (cur_token->tok_value != S_RIGHT_PAREN) {
+  // //   return INVALID_STATEMENT;
+  // // }
+
+  // cur_token = cur_token->next;
+
+
+
+
+
+  return rc;
 
 }
 
