@@ -1169,32 +1169,7 @@ int sem_select(token_list *t_list) {
     return sem_select_agg(cur_token);
   }
 
-  // todo :: multiple cols <--
-
-  // todo :: order by
-  // todo :: 2 conditionals
-
-  // SELECT col1, col2, col3 FROM tab WHERE ...
-  // SELECT * FROM tab WHERE
-
   token_list *first_col_token = cur_token;
-
-  // make sure these tokens are col names
-
-  // todone :: don't need to loop twice:
-  /*
-   * while curtoken is not FROM keep advancing,
-   * go up 1, this is table name, -> get the tpd entry and cd entry
-   * then loop through cols_to_print if we have * vs if we have col names
-   */
-
-//  while (cur_token->tok_value != K_FROM) {
-//    if (cur_token->next->tok_class == terminator) {
-//      return INVALID_STATEMENT;
-//    }
-//    cur_token = cur_token->next;
-//  }
-//  table_name_token = cur_token->next;
 
   int cols_print_count = 0;
   token_list *table_name_token = nullptr;
@@ -1272,9 +1247,6 @@ int sem_select(token_list *t_list) {
     }
   }
 
-  // cur_token points to table name
-  curr_cd = first_cd;
-
   // header line 1/3
   printf("+");
   for (int i = 0; i < cols_print_count; ++i) {
@@ -1317,9 +1289,7 @@ int sem_select(token_list *t_list) {
       char *print_field = record_head;
 
       cd_entry *cd_iter = first_cd;
-      while (cd_iter != print_cd) {
-        print_field += (cd_iter++)->col_len + 1;
-      }
+      while (cd_iter != print_cd) print_field += (cd_iter++)->col_len + 1;
 
       int col_print_size = get_print_size(print_cd);
 
@@ -1344,11 +1314,9 @@ int sem_select(token_list *t_list) {
       } else {
         printf("unexpected type\n");
       }
-
     }
 
     printf("\n");
-    curr_cd = first_cd;
     record_head += file_header->record_size;
   }
 
@@ -1363,6 +1331,7 @@ int sem_select(token_list *t_list) {
   printf("%d rows selected.\n", file_header->num_records);
 
   free(file_header);
+  free(cols_to_print);
   return 0;
 }
 
