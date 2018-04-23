@@ -300,11 +300,10 @@ int do_semantic(token_list *tok_list) {
     cur_cmd = INSERT;
     cur = cur->next->next;
 
-  } else if ((cur->tok_value == K_SELECT) &&
-             ((cur->next != NULL) && (cur->next->tok_value == S_STAR))) {
-    printf("SELECT * statement\n");
+  } else if ((cur->tok_value == K_SELECT) && ((cur->next != NULL))) {
+    printf("SELECT statement\n");
     cur_cmd = SELECT;
-    cur = cur->next->next;
+    cur = cur->next;
 
   } else if ((cur->tok_value == K_DELETE) &&
              ((cur->next != NULL) && (cur->next->tok_value == K_FROM))) {
@@ -342,7 +341,7 @@ int do_semantic(token_list *tok_list) {
         rc = sem_insert_value(cur);
         break;
       case SELECT:
-        rc = sem_select_star(cur);
+        rc = sem_select(cur);
         break;
       case DELETE:
         rc = sem_delete_value(cur);
@@ -1160,9 +1159,78 @@ table_file_header *get_file_header(char *tab_name) {
   return table_header;
 }
 
-int sem_select_star(token_list *t_list) {
+int sem_select(token_list *t_list) {
 
-  tpd_entry *tpd = get_tpd_from_list(t_list->next->tok_string);
+  token_list *cur_token = t_list;
+
+  if (cur_token->tok_value == F_SUM || cur_token->tok_value == F_COUNT
+      || cur_token->tok_value == F_AVG) {
+
+    return sem_select_agg(cur_token);
+  }
+
+  // todo :: multiple cols <--
+
+  // todo :: order by
+  // todo :: 2 conditionals
+
+  // SELECT col1, col2, col3 FROM tab WHERE ...
+  // SELECT * FROM tab WHERE
+
+  token_list *first_col_token = cur_token;
+
+  // make sure these tokens are col names
+
+  // todone :: don't need to loop twice:
+  /*
+   * while curtoken is not FROM keep advancing,
+   * go up 1, this is table name, -> get the tpd entry and cd entry
+   * then loop through cols_to_print if we have * vs if we have col names
+   */
+
+//  while (cur_token->tok_value != K_FROM) {
+//    if (cur_token->next->tok_class == terminator) {
+//      return INVALID_STATEMENT;
+//    }
+//    cur_token = cur_token->next;
+//  }
+//  table_name_token = cur_token->next;
+
+  int cols_print_count = 0;
+  token_list *table_name_token = nullptr;
+
+  if (first_col_token->tok_value == S_STAR) {
+    // make sure next is FROM
+    if (first_col_token->next->tok_value != K_FROM) {
+      return INVALID_STATEMENT;
+    }
+    table_name_token = first_col_token->next->next;
+    cur_token = first_col_token->next;
+
+  } else {
+    while (cur_token->tok_value != K_FROM) {
+      cols_print_count++;
+      if (cur_token->next->tok_value == S_COMMA) {
+        cur_token = cur_token->next->next;
+      } else if (cur_token->next->tok_value == K_FROM) {
+        cur_token = cur_token->next;
+      } else {
+        return INVALID_STATEMENT;
+      }
+    }
+    if (!cols_print_count) {
+      return INVALID_STATEMENT;
+    }
+    table_name_token = cur_token->next;
+  }
+
+  if (table_name_token == nullptr) {
+    return INVALID_STATEMENT;
+  }
+
+  // cur_token points to FROM
+
+  tpd_entry *tpd = get_tpd_from_list(table_name_token->tok_string);
 
   if (tpd == nullptr) {
     printf("table not found\n");
@@ -1172,72 +1240,111 @@ int sem_select_star(token_list *t_list) {
   cd_entry *curr_cd = (cd_entry *) ((char *) tpd + tpd->cd_offset);
   cd_entry *first_cd = curr_cd;
 
+  if (first_col_token->tok_value == S_STAR) {
+    cols_print_count = tpd->num_columns;
+    cur_token = cur_token->next;
+  } else {
+    cur_token = first_col_token;
+  }
+
+  int* cols_to_print = (int *) calloc((size_t) cols_print_count, sizeof(int)); // indices of which cols to print
+
+  for (int i = 0; i < cols_print_count; ++i) {
+    // iterating through cols_to_print
+
+    if (first_col_token->tok_value == S_STAR) {
+      cols_to_print[i] = i;
+    } else {
+
+      // iterate through CDs to find matching name
+      bool found = false;
+      for (int j = 0; j < tpd->num_columns && !found; ++j, ++curr_cd) {
+        if (!strcmp(cur_token->tok_string, curr_cd->col_name)) {
+          cols_to_print[i] = curr_cd->col_id;
+          found = true;
+        }
+      }
+      if (!found) {
+        return INVALID_STATEMENT; // todo :: check for pending free() calls
+      }
+      curr_cd = first_cd;
+      cur_token = cur_token->next->next;
+    }
+  }
+
+  // cur_token points to table name
+  curr_cd = first_cd;
+
   // header line 1/3
   printf("+");
-  for (int i = 0; i < tpd->num_columns; ++i) {
-    printf("%s+", std::string(get_print_size(curr_cd++), '-').c_str());
+  for (int i = 0; i < cols_print_count; ++i) {
+    printf("%s+", std::string((unsigned long) get_print_size(
+        (first_cd + cols_to_print[i])), '-').c_str());
   }
   printf("\n|");
-  curr_cd = first_cd;
 
   // header line 2/3
-  for (int i = 0; i < tpd->num_columns; ++i, curr_cd++) {
-    printf("%-*s|", get_print_size(curr_cd), curr_cd->col_name);
+  for (int i = 0; i < cols_print_count; ++i) {
+    printf("%-*s|", get_print_size(first_cd + cols_to_print[i]),
+           (first_cd + cols_to_print[i])->col_name);
   }
   printf("\n+");
-  curr_cd = first_cd;
 
   // header line 3/3
-  for (int i = 0; i < tpd->num_columns; ++i) {
-    printf("%s+", std::string(get_print_size(curr_cd++), '-').c_str());
+  for (int i = 0; i < cols_print_count; ++i) {
+    printf("%s+", std::string((unsigned long) get_print_size(
+        (first_cd + cols_to_print[i])), '-').c_str());
   }
   printf("\n");
-  curr_cd = first_cd;
 
-  table_file_header *file_header = get_file_header(t_list->next->tok_string);
+  table_file_header *file_header = get_file_header(table_name_token->tok_string);
 
   if (file_header->num_records == 0) {
     printf("there are no records in this table\n");
     return 0;
   }
 
-  char *curr_field = (char *) (file_header + 1);
-  char *record_head = curr_field;
+  char *record_head = (char *) (file_header + 1);
 
   for (int i = 0; i < file_header->num_records; ++i) {
 
     printf("|");
-    curr_field = record_head; // redundant for first iteration
+     // record_head;
 
-    for (int j = 0; j < tpd->num_columns; ++j) {
+    for (int j = 0; j < cols_print_count; ++j) {
 
-      int col_print_size = get_print_size(curr_cd);
+      cd_entry *print_cd = first_cd + cols_to_print[j];
+      char *print_field = record_head;
 
-      if ((int) curr_field[0] == 0) {
+      cd_entry *cd_iter = first_cd;
+      while (cd_iter != print_cd) {
+        print_field += (cd_iter++)->col_len + 1;
+      }
+
+      int col_print_size = get_print_size(print_cd);
+
+      if ((int) print_field[0] == 0) {
+        // todo :: left align String and right align ints (even for null values)
         printf("%sNULL|", std::string(col_print_size - 4, ' ').c_str());
-        curr_field++;
 
-      } else if (curr_cd->col_type == T_CHAR) {
+      } else if (print_cd->col_type == T_CHAR) {
 
-        char *data = (char *) calloc(1, (size_t) curr_cd->col_len);
-        memcpy(data, ++curr_field, (size_t) curr_cd->col_len);
+        char *data = (char *) calloc(1, (size_t) print_cd->col_len);
+        memcpy(data, (print_field + 1), (size_t) print_cd->col_len);
         printf("%-*s|", col_print_size, data);
         free(data);
 
-      } else if (curr_cd->col_type == T_INT) {
+      } else if (print_cd->col_type == T_INT) {
 
-        curr_field++;
         int *data = (int *) calloc(1, sizeof(int));
-        memcpy(data, &curr_field[0], sizeof(int));
+        memcpy(data, &(print_field + 1)[0], sizeof(int));
         printf("%*d|", col_print_size, *data);
         free(data);
 
       } else {
-        printf("unexpected type");
+        printf("unexpected type\n");
       }
 
-      curr_field += curr_cd->col_len;
-      curr_cd++;
     }
 
     printf("\n");
@@ -1247,8 +1354,9 @@ int sem_select_star(token_list *t_list) {
 
   // bottom of table
   printf("+");
-  for (int i = 0; i < tpd->num_columns; ++i) {
-    printf("%s+", std::string(get_print_size(curr_cd++), '-').c_str());
+  for (int i = 0; i < cols_print_count; ++i) {
+    printf("%s+", std::string((unsigned long) get_print_size(
+        (first_cd + cols_to_print[i])), '-').c_str());
   }
   printf("\n");
 
@@ -1256,6 +1364,14 @@ int sem_select_star(token_list *t_list) {
 
   free(file_header);
   return 0;
+}
+
+int sem_select_agg(token_list *t_list) {
+
+  // todo :: implement this
+  printf("select agg triggered");
+  return -1;
+
 }
 
 int sem_update_value(token_list *cur_token) {
