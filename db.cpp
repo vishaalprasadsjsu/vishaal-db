@@ -1330,11 +1330,6 @@ int sem_select_agg(token_list *t_list) {
 
   int rc = 0;
 
-  // SELECT AVG   (int_col)   FROM tab   (WHERE ...)
-  // SELECT SUM   (int_col)   FROM tab   (WHERE ...)
-  // SELECT COUNT (any_col)   FROM tab   (WHERE ...)
-  // SELECT COUNT (   *   )   FROM tab     ''
-
   token_list *cur_token = t_list;
   token_list *agg_token = cur_token;
   cur_token = cur_token->next;
@@ -1440,6 +1435,7 @@ int sem_select_agg(token_list *t_list) {
   printf("|%+*s|\n", print_width, result_str.c_str());
   printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
 
+  free(file_header);
   return rc;
 }
 
