@@ -12,6 +12,7 @@
 #include <sys/file.h>
 #include <zconf.h>
 #include <string>
+#include <cmath>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define strcasecmp _stricmp
@@ -1224,7 +1225,7 @@ int sem_select(token_list *t_list) {
 
   int* cols_to_print = (int *) calloc((size_t) cols_print_count, sizeof(int)); // indices of which cols to print
 
-  // populare cols_to_print
+  // populate cols_to_print
   for (int i = 0; i < cols_print_count; ++i) {
 
     if (first_col_token->tok_value == S_STAR) {
@@ -1272,7 +1273,6 @@ int sem_select(token_list *t_list) {
   for (int i = 0; i < file_header->num_records; ++i) {
 
     printf("|");
-     // record_head;
 
     for (int j = 0; j < cols_print_count; ++j) {
 
@@ -1328,37 +1328,116 @@ int sem_select(token_list *t_list) {
 
 int sem_select_agg(token_list *t_list) {
 
-  int rc = -1;
+  int rc = 0;
 
   // SELECT AVG   (int_col)   FROM tab   (WHERE ...)
   // SELECT SUM   (int_col)   FROM tab   (WHERE ...)
   // SELECT COUNT (any_col)   FROM tab   (WHERE ...)
   // SELECT COUNT (   *   )   FROM tab     ''
 
-  // // token_list *cur_token = t_list;
-  // // token_list *agg_token = cur_token;
-  // // cur_token = cur_token->next;
+  token_list *cur_token = t_list;
+  token_list *agg_token = cur_token;
+  cur_token = cur_token->next;
 
-  // // if (cur_token->tok_value != S_LEFT_PAREN) {
-  // //   return INVALID_STATEMENT;
-  // // }
+  if (cur_token->tok_value != S_LEFT_PAREN) {
+    return INVALID_STATEMENT;
+  }
 
-  // // cur_token = cur_token->next;
-  // // token_list *sel_col_token = cur_token;
-  // // cur_token = cur_token->next;
+  cur_token = cur_token->next;
+  token_list *sel_col_token = cur_token;
+  cur_token = cur_token->next;
 
-  // // if (cur_token->tok_value != S_RIGHT_PAREN) {
-  // //   return INVALID_STATEMENT;
-  // // }
+  if (cur_token->tok_value != S_RIGHT_PAREN) {
+    return INVALID_STATEMENT;
+  }
 
-  // cur_token = cur_token->next;
+  cur_token = cur_token->next;
 
+  if (cur_token->tok_value != K_FROM) {
+    return INVALID_STATEMENT; 
+  }
+  
+  cur_token = cur_token->next;
 
+  tpd_entry *curr_table_tpd = get_tpd_from_list(cur_token->tok_string);
+  if (curr_table_tpd == nullptr) { 
+    printf("table not found\n");
+    return TABLE_NOT_EXIST;
+  }
 
+  cd_entry *sel_col_cd = nullptr;
+  if (sel_col_token->tok_value == S_STAR) {
+    if (agg_token->tok_value != F_COUNT) {
+      printf("%s cannot be used with *\n", agg_token->tok_value == F_AVG ? "AVG" : "SUM");
+      return INVALID_STATEMENT;
+    }
+    sel_col_cd = (cd_entry *) (((char *) (curr_table_tpd)) + curr_table_tpd->cd_offset);
 
+  } else {
+    sel_col_cd = get_cd(cur_token->tok_string, sel_col_token->tok_string);
+    if (sel_col_cd == nullptr) {
+      printf("could not find column [%s]\n", sel_col_token->tok_string);
+      return COLUMN_NOT_EXIST;
+    }
+  }
+
+  // TODO :: handle conditionals (w/ AND/OR)
+
+  if ((agg_token->tok_value == F_AVG || agg_token->tok_value == F_SUM)
+      && (sel_col_cd->col_type == T_CHAR)) {
+
+    printf("%s must be used with an INT column type\n",
+           agg_token->tok_value == F_AVG ? "AVG" : "SUM");
+
+    return INVALID_STATEMENT;
+  }
+
+  table_file_header *file_header = get_file_header(cur_token->tok_string);
+
+  char *curr_field = ((char *) file_header) + file_header->record_offset;
+
+  cd_entry *cd_iter = (cd_entry *) (((char *) curr_table_tpd) + curr_table_tpd->cd_offset);
+  while (cd_iter != sel_col_cd) curr_field += (cd_iter++)->col_len + 1;
+
+  long sum = 0;
+  int count = 0;
+
+  for (int i = 0; i < file_header->num_records; ++i) {
+
+    if (((int) curr_field[0]) != 0) count++;
+
+    if (sel_col_cd->col_type == T_INT) {
+      int *data = (int *) calloc(1, sizeof(int));
+      memcpy(data, &(curr_field + 1)[0], sizeof(int));
+      sum += *data;
+      free(data);
+    }
+
+    curr_field += file_header->record_size;
+  }
+
+  float avg = ((float) sum) / count;
+
+  std::string result_str;
+
+  if (agg_token->tok_value == F_SUM) result_str = std::to_string(sum);
+  else if (agg_token->tok_value == F_AVG) result_str = std::to_string(avg);
+  else result_str = std::to_string(count);
+
+  std::string title_str = std::string(agg_token->tok_string);
+  title_str.append("(");
+  title_str.append(sel_col_token->tok_string);
+  title_str.append(")");
+
+  int print_width = (int) fmax(result_str.length(), title_str.length());
+
+  printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
+  printf("|%-*s|\n", print_width, title_str.c_str());
+  printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
+  printf("|%+*s|\n", print_width, result_str.c_str());
+  printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
 
   return rc;
-
 }
 
 int sem_update_value(token_list *cur_token) {
