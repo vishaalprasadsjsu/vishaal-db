@@ -1371,7 +1371,6 @@ int sem_select_agg(token_list *t_list) {
       printf("%s cannot be used with *\n", agg_token->tok_value == F_AVG ? "AVG" : "SUM");
       return INVALID_STATEMENT;
     }
-    sel_col_cd = (cd_entry *) (((char *) (curr_table_tpd)) + curr_table_tpd->cd_offset);
 
   } else {
     sel_col_cd = get_cd(cur_token->tok_string, sel_col_token->tok_string);
@@ -1397,23 +1396,27 @@ int sem_select_agg(token_list *t_list) {
   char *curr_field = ((char *) file_header) + file_header->record_offset;
 
   cd_entry *cd_iter = (cd_entry *) (((char *) curr_table_tpd) + curr_table_tpd->cd_offset);
-  while (cd_iter != sel_col_cd) curr_field += (cd_iter++)->col_len + 1;
+  while (cd_iter != sel_col_cd && (sel_col_cd != nullptr)) curr_field += (cd_iter++)->col_len + 1;
 
   long sum = 0;
   int count = 0;
 
-  for (int i = 0; i < file_header->num_records; ++i) {
+  for (int i = 0; i < file_header->num_records; ++i, curr_field += file_header->record_size) {
 
-    if (((int) curr_field[0]) != 0) count++;
+    if (sel_col_token->tok_value == S_STAR) {
+      count++;
 
-    if (sel_col_cd->col_type == T_INT) {
-      int *data = (int *) calloc(1, sizeof(int));
-      memcpy(data, &(curr_field + 1)[0], sizeof(int));
-      sum += *data;
-      free(data);
+    } else {
+
+      if (((int) curr_field[0]) != 0) count++;
+
+      if (sel_col_cd->col_type == T_INT) {
+        int *data = (int *) calloc(1, sizeof(int));
+        memcpy(data, &(curr_field + 1)[0], sizeof(int));
+        sum += *data;
+        free(data);
+      }
     }
-
-    curr_field += file_header->record_size;
   }
 
   float avg = ((float) sum) / count;
