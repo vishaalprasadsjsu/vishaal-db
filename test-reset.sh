@@ -6,7 +6,7 @@ rm dbfile.bin
 
 rm ./db
 
-c++ -m32 db.cpp -o db
+c++ -std=c++11 -m32 db.cpp -o db
 
 /usr/bin/clear
 

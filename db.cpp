@@ -13,6 +13,9 @@
 #include <zconf.h>
 #include <string>
 #include <cmath>
+#include <vector>
+#include <functional>
+using namespace std::placeholders;
 
 #if defined(_WIN32) || defined(_WIN64)
 #define strcasecmp _stricmp
@@ -1161,7 +1164,7 @@ table_file_header *get_file_header(char *tab_name) {
 }
 
 int sem_select(token_list *t_list) {
-
+  int rc = 0;
   token_list *cur_token = t_list;
 
   if (cur_token->tok_value == F_SUM || cur_token->tok_value == F_COUNT
@@ -1205,6 +1208,7 @@ int sem_select(token_list *t_list) {
   }
 
   // cur_token points to FROM
+  token_list *from_token = cur_token;
 
   tpd_entry *tpd = get_tpd_from_list(table_name_token->tok_string);
 
@@ -1268,16 +1272,136 @@ int sem_select(token_list *t_list) {
     return 0;
   }
 
-  char *record_head = (char *) (file_header + 1);
+  cur_token = from_token->next->next;
 
-  for (int i = 0; i < file_header->num_records; ++i) {
+  token_list *where_token = nullptr;
+  token_list *comp_cond_token = nullptr;
+  token_list *order_col_token = nullptr;
+  cd_entry *order_col_cd = nullptr;
+  int order_by_col_offset = 0;
+
+  int first_comp_type = 0;
+  token_list *first_comp_val_token = nullptr;
+  cd_entry *first_comp_cd = nullptr;
+  int first_comp_field_offset = 0;
+
+  int second_comp_type = 0;
+  token_list *second_comp_val_token = nullptr;
+  cd_entry *second_comp_cd = nullptr;
+  int second_comp_field_offset = 0;
+
+  if (cur_token->tok_value == K_WHERE) {
+
+    where_token = cur_token;
+    rc = get_compare_vals(where_token, table_name_token->tok_string, first_cd, &first_comp_type,
+                          &first_comp_val_token, &first_comp_cd, &first_comp_field_offset);
+
+    if (rc) return rc;
+
+    cur_token = first_comp_val_token->next;
+
+    if (cur_token->tok_value == K_AND || cur_token->tok_value == K_OR) {
+      comp_cond_token = cur_token;
+
+      rc = get_compare_vals(comp_cond_token, table_name_token->tok_string, first_cd, &second_comp_type,
+                            &second_comp_val_token, &second_comp_cd, &second_comp_field_offset);
+
+      if (rc) return rc;
+
+      cur_token = second_comp_val_token->next;
+    }
+  }
+
+  if (cur_token->tok_value == K_ORDER) {
+
+    cur_token = cur_token->next;
+    if (cur_token->tok_value != K_BY) {
+      return INVALID_STATEMENT;
+    }
+
+    cur_token = cur_token->next;
+    order_col_token = cur_token;
+    order_col_cd = get_cd(table_name_token->tok_string, order_col_token->tok_string);
+
+    cd_entry *cd_iter = first_cd;
+    while (cd_iter != order_col_cd) order_by_col_offset += (cd_iter++)->col_len + 1;
+
+    if (order_col_cd == nullptr) {
+      printf("could not find order by col [%s]\n", order_col_token->tok_string);
+    }
+
+    cur_token = cur_token->next;
+
+    if (cur_token->tok_value != K_DESC) {
+      printf("must be order by desc\n");
+      return INVALID_STATEMENT;
+    }
+
+
+  } else if (cur_token->tok_class != terminator) {
+    printf("unexpected token [%s]", cur_token->tok_string);
+    return INVALID_STATEMENT;
+  }
+
+  char *first_record = (char *) (file_header + 1);
+  char *curr_record = first_record;
+
+  std::vector<char *> record_heads; // push_back(char *) to add values
+
+  for (int i = 0; i < file_header->num_records; ++i, curr_record += file_header->record_size) {
+
+    // no conditional
+    if (where_token == nullptr) {
+      record_heads.push_back(curr_record);
+
+    } else if (comp_cond_token == nullptr) {
+
+      // where only
+      if (satisfies_condition(curr_record + first_comp_field_offset, first_comp_type,
+                          first_comp_val_token, first_comp_cd->col_len)) {
+
+        record_heads.push_back(curr_record);
+      }
+
+    } else if (comp_cond_token->tok_value == K_AND) {
+
+      // where cond1 AND cond2
+      if (satisfies_condition(curr_record + first_comp_field_offset, first_comp_type,
+                              first_comp_val_token, first_comp_cd->col_len)
+          && satisfies_condition(curr_record + second_comp_field_offset, second_comp_type,
+                                 second_comp_val_token, second_comp_cd->col_len)) {
+
+        record_heads.push_back(curr_record);
+
+      }
+
+    } else if (comp_cond_token->tok_value == K_OR) {
+
+      if (satisfies_condition(curr_record + first_comp_field_offset, first_comp_type,
+                              first_comp_val_token, first_comp_cd->col_len)
+          || satisfies_condition(curr_record + second_comp_field_offset, second_comp_type,
+                                 second_comp_val_token, second_comp_cd->col_len)) {
+
+        record_heads.push_back(curr_record);
+
+      }
+    }
+  }
+
+  if (order_col_token != nullptr) {
+    std::sort(record_heads.begin(), record_heads.end(), std::bind(compare_records_by_val, _1, _2,
+                        order_col_cd, order_by_col_offset));
+  }
+
+  // todo :: iterate through vector of (pointers to records), below logic will be the same
+  for (int i = 0; i < record_heads.size(); ++i) {
 
     printf("|");
 
     for (int j = 0; j < cols_print_count; ++j) {
 
       cd_entry *print_cd = first_cd + cols_to_print[j];
-      char *print_field = record_head;
+      char *print_field = record_heads.at((unsigned long) i);
 
       cd_entry *cd_iter = first_cd;
       while (cd_iter != print_cd) print_field += (cd_iter++)->col_len + 1;
@@ -1308,7 +1432,6 @@ int sem_select(token_list *t_list) {
     }
 
     printf("\n");
-    record_head += file_header->record_size;
   }
 
   // bottom of table
@@ -1319,7 +1442,7 @@ int sem_select(token_list *t_list) {
   }
   printf("\n");
 
-  printf("%d rows selected.\n", file_header->num_records);
+  printf("%d rows selected.\n", (int) record_heads.size());
 
   free(file_header);
   free(cols_to_print);
@@ -1663,7 +1786,10 @@ int sem_delete_value(token_list *cur_token) {
 int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, int *comp_type,
                      token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset) {
 
-  if (cur_token->tok_value != K_WHERE || cur_token->next == nullptr) {
+  if ((cur_token->tok_value != K_WHERE && cur_token->tok_value != K_OR
+       && cur_token->tok_value != K_AND)
+      || cur_token->next->tok_class == terminator) {
+
     return INVALID_STATEMENT;
   }
 
@@ -1706,23 +1832,23 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
   return 0;
 }
 
-bool satisfies_condition(char *field, int operator_type, token_list *data_value_token, int col_len) {
+bool satisfies_condition(char *field, int operator_type, token_list *comp_value_token, int col_len) {
 
-  if (data_value_token->tok_value == K_NULL) {
+  if (comp_value_token->tok_value == K_NULL) {
     return *(field - 1) == '\0';
   }
 
   int cmp_val;
 
-  if (data_value_token->tok_value == INT_LITERAL) {
+  if (comp_value_token->tok_value == INT_LITERAL) {
     int *data = (int *) calloc(1, sizeof(int));
     memcpy(data, field, sizeof(int));
-    cmp_val = *data - atoi(data_value_token->tok_string);
+    cmp_val = *data - atoi(comp_value_token->tok_string);
     free(data);
   } else {
     char *data = (char *) calloc(1, (size_t) col_len);
     memcpy(data, field, (size_t) col_len);
-    cmp_val = strcmp(data, data_value_token->tok_string);
+    cmp_val = strcmp(data, comp_value_token->tok_string);
     free(data);
   }
 
@@ -1769,4 +1895,48 @@ int delete_tab_file(char *tab_name) {
 
   free(file_name);
   return remove(file_name);
+}
+
+bool compare_records_by_val(const char *record_a, const char *record_b,
+                                cd_entry *order_cd, int field_offset) {
+
+  // true for a < b
+
+  if ((int) ((record_a + field_offset)[0]) == 0) {
+    return true;
+
+  } else if((int) ((record_b + field_offset)[0]) == 0) {
+    return false;
+
+  } else if (order_cd->col_type == T_INT) {
+
+    int *data_a = (int *) calloc(1, sizeof(int));
+    int *data_b = (int *) calloc(1, sizeof(int));
+
+    memcpy(data_a, &(record_a + field_offset + 1)[0], sizeof(int));
+    memcpy(data_b, &(record_b + field_offset + 1)[0], sizeof(int));
+
+    bool ret_val = (*data_a < *data_b);
+
+    free(data_a);
+    free(data_b);
+
+    return ret_val;
+
+  } else {
+
+    char *data_a = (char *) calloc(1, (size_t) order_cd->col_len);
+    char *data_b = (char *) calloc(1, (size_t) order_cd->col_len);
+
+    memcpy(data_a, (record_a + field_offset + 1), (size_t) order_cd->col_len);
+    memcpy(data_b, (record_b + field_offset + 1), (size_t) order_cd->col_len);
+
+    bool ret_val = (strcmp(data_a, data_b) < 0);
+
+    free(data_a);
+    free(data_b);
+
+    return ret_val;
+  }
+
 }

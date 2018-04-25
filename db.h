@@ -58,6 +58,17 @@ typedef struct t_list
   struct t_list *next;
 } token_list;
 
+/* Table header, at start of a .tab file */
+typedef struct table_file_header_def
+{
+  int    file_size;        // 4 bytes
+  int    record_size;      // 4 bytes
+  int    num_records;      // 4 bytes
+  int    record_offset;    // 4 bytes
+  int    file_header_flag; // 4 bytes
+  tpd_entry  *tpd_ptr;         // 4 bytes [?]
+} table_file_header;           // minimum size = 24
+
 /* This enum defines the different classes of tokens for 
    semantic processing. */
 typedef enum t_class
@@ -71,18 +82,6 @@ typedef enum t_class
   terminator,   // 7
   error         // 8
 } token_class;
-
-/* Table header, at start of a .tab file */
-typedef struct table_file_header_def
-{
-  int    file_size;        // 4 bytes
-  int    record_size;      // 4 bytes
-  int    num_records;      // 4 bytes
-  int    record_offset;    // 4 bytes
-  int    file_header_flag; // 4 bytes
-  tpd_entry  *tpd_ptr;         // 4 bytes [?]
-} table_file_header;           // minimum size = 24
-
 
 /* This enum defines the different values associated with
    a single valid token.  Use for semantic processing. */
@@ -212,7 +211,9 @@ void append_field_to_tab(char *tab_name, token_list *token, int col_len);
 void append_zeros_to_tab(char *tab_name, int how_many_bytes);
 int get_print_size(cd_entry *cd);
 int delete_tab_file(char *tab_name);
-bool satisfies_condition(char *field, int operator_type, token_list *data_value_token, int col_len);
+bool satisfies_condition(char *field, int operator_type, token_list *comp_value_token, int col_len);
 cd_entry *get_cd(char *table_name, char *col_name);
 int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, int *comp_type,
                      token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset);
+bool compare_records_by_val(const char *record_a, const char *record_b,
+                            cd_entry *order_cd, int field_offset);
