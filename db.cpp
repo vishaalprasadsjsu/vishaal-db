@@ -1393,7 +1393,6 @@ int sem_select(token_list *t_list) {
                         order_col_cd, order_by_col_offset));
   }
 
-  // todo :: iterate through vector of (pointers to records), below logic will be the same
   for (int i = 0; i < record_heads.size(); ++i) {
 
     printf("|");
@@ -1498,7 +1497,48 @@ int sem_select_agg(token_list *t_list) {
     }
   }
 
-  // TODO :: handle conditionals (w/ AND/OR)
+  token_list *table_name_token = cur_token;
+  cur_token = cur_token->next;
+  cd_entry *first_cd = (cd_entry *) (((char *) curr_table_tpd) + curr_table_tpd->cd_offset);
+
+  token_list *where_token = nullptr;
+  token_list *comp_cond_token = nullptr;
+
+  int first_comp_type = 0;
+  token_list *first_comp_val_token = nullptr;
+  cd_entry *first_comp_cd = nullptr;
+  int first_comp_field_offset = 0;
+
+  int second_comp_type = 0;
+  token_list *second_comp_val_token = nullptr;
+  cd_entry *second_comp_cd = nullptr;
+  int second_comp_field_offset = 0;
+
+  if (cur_token->tok_value == K_WHERE) {
+    where_token = cur_token;
+    rc = get_compare_vals(where_token, table_name_token->tok_string, first_cd, &first_comp_type,
+                          &first_comp_val_token, &first_comp_cd, &first_comp_field_offset);
+
+    if (rc) return rc;
+
+    cur_token = first_comp_val_token->next;
+
+    if (cur_token->tok_value == K_AND || cur_token->tok_value == K_OR) {
+      comp_cond_token = cur_token;
+
+      rc = get_compare_vals(comp_cond_token, table_name_token->tok_string, first_cd, &second_comp_type,
+                            &second_comp_val_token, &second_comp_cd, &second_comp_field_offset);
+
+      if (rc) return rc;
+
+      cur_token = second_comp_val_token->next;
+    }
+
+
+  } else if (cur_token->tok_class != terminator && cur_token->tok_value != K_ORDER) {
+    return INVALID_STATEMENT;
+  }
+
 
   if ((agg_token->tok_value == F_AVG || agg_token->tok_value == F_SUM)
       && (sel_col_cd->col_type == T_CHAR)) {
@@ -1509,8 +1549,9 @@ int sem_select_agg(token_list *t_list) {
     return INVALID_STATEMENT;
   }
 
-  table_file_header *file_header = get_file_header(cur_token->tok_string);
+  table_file_header *file_header = get_file_header(table_name_token->tok_string);
 
+  char *record_head = ((char *) file_header) + file_header->record_offset;
   char *curr_field = ((char *) file_header) + file_header->record_offset;
 
   cd_entry *cd_iter = (cd_entry *) (((char *) curr_table_tpd) + curr_table_tpd->cd_offset);
@@ -1519,20 +1560,62 @@ int sem_select_agg(token_list *t_list) {
   long sum = 0;
   int count = 0;
 
-  for (int i = 0; i < file_header->num_records; ++i, curr_field += file_header->record_size) {
+  for (int i = 0; i < file_header->num_records; ++i,
+      curr_field += file_header->record_size, record_head += file_header->record_size) {
 
-    if (sel_col_token->tok_value == S_STAR) {
-      count++;
+    bool is_cond_satisfied = false;
 
-    } else {
+    // no conditional
+    if (where_token == nullptr) {
+      is_cond_satisfied = true;
 
-      if (((int) curr_field[0]) != 0) count++;
+    } else if (comp_cond_token == nullptr) {
 
-      if (sel_col_cd->col_type == T_INT) {
-        int *data = (int *) calloc(1, sizeof(int));
-        memcpy(data, &(curr_field + 1)[0], sizeof(int));
-        sum += *data;
-        free(data);
+      // where only
+      if (satisfies_condition(record_head + first_comp_field_offset, first_comp_type,
+                              first_comp_val_token, first_comp_cd->col_len)) {
+
+        is_cond_satisfied = true;
+      }
+
+    } else if (comp_cond_token->tok_value == K_AND) {
+
+      // where cond1 AND cond2
+      if (satisfies_condition(record_head + first_comp_field_offset, first_comp_type,
+                              first_comp_val_token, first_comp_cd->col_len)
+          && satisfies_condition(record_head + second_comp_field_offset, second_comp_type,
+                                 second_comp_val_token, second_comp_cd->col_len)) {
+
+        is_cond_satisfied = true;
+
+      }
+
+    } else if (comp_cond_token->tok_value == K_OR) {
+
+      if (satisfies_condition(record_head + first_comp_field_offset, first_comp_type,
+                              first_comp_val_token, first_comp_cd->col_len)
+          || satisfies_condition(record_head + second_comp_field_offset, second_comp_type,
+                                 second_comp_val_token, second_comp_cd->col_len)) {
+
+        is_cond_satisfied = true;
+
+      }
+    }
+
+    if (is_cond_satisfied) {
+      if (sel_col_token->tok_value == S_STAR) {
+        count++;
+
+      } else {
+
+        if (((int) curr_field[0]) != 0) count++;
+
+        if (sel_col_cd->col_type == T_INT) {
+          int *data = (int *) calloc(1, sizeof(int));
+          memcpy(data, &(curr_field + 1)[0], sizeof(int));
+          sum += *data;
+          free(data);
+        }
       }
     }
   }
@@ -1800,15 +1883,40 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
   if (cur_token == nullptr || cur_token->next == nullptr
       || (cur_token->tok_value != S_EQUAL
           && cur_token->tok_value != S_LESS
-          && cur_token->tok_value != S_GREATER))  {
+          && cur_token->tok_value != S_GREATER
+          && cur_token->tok_value != K_IS))  {
 
     return INVALID_STATEMENT;
   }
 
-
   *comp_type = cur_token->tok_value;
-  cur_token = cur_token->next;
-  *comp_value_token = cur_token;
+  *comp_value_token = cur_token->next;
+
+  if (cur_token->tok_value == K_IS) {
+    cur_token = cur_token->next;
+
+    if (cur_token->tok_value == K_NOT) {
+      cur_token = cur_token->next;
+
+      if (cur_token->tok_value == K_NULL) {
+        // IS NOT NULL
+        *comp_type = K_NOT;
+        *comp_value_token = cur_token;
+
+      } else {
+        return INVALID_STATEMENT;
+      }
+
+    } else if (cur_token->tok_value == K_NULL) {
+      // IS NULL
+      *comp_type = K_IS;
+      *comp_value_token = cur_token;
+
+    } else {
+      return INVALID_STATEMENT;
+    }
+
+  }
 
   *compare_cd = get_cd(table_name, col_name);
 
@@ -1834,8 +1942,16 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
 
 bool satisfies_condition(char *field, int operator_type, token_list *comp_value_token, int col_len) {
 
-  if (comp_value_token->tok_value == K_NULL) {
+  if (operator_type == K_IS && comp_value_token->tok_value == K_NULL) {
     return *(field - 1) == '\0';
+  }
+
+  if (operator_type == K_NOT && comp_value_token->tok_value == K_NULL) {
+    return *(field - 1) != '\0';
+  }
+
+  if (*(field - 1) == '\0') {
+    return false;
   }
 
   int cmp_val;
