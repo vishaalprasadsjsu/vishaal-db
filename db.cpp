@@ -1406,8 +1406,11 @@ int sem_select(token_list *t_list) {
       int col_print_size = get_print_size(print_cd);
 
       if ((int) print_field[0] == 0) {
-        // todo :: left align String and right align ints (even for null values)
-        printf("%sNULL|", std::string(col_print_size - 4, ' ').c_str());
+        if (print_cd->col_type == T_CHAR) {
+          printf("NULL%s|", std::string(col_print_size - 4, ' ').c_str());
+        } else { 
+          printf("%sNULL|", std::string(col_print_size - 4, ' ').c_str());
+        }
 
       } else if (print_cd->col_type == T_CHAR) {
 
