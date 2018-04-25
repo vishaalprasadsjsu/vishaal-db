@@ -1,6 +1,27 @@
 CS 157B Database Project 
 ========================
-An implementation of a basic relational database capable of processing basic SQL statements. 
+A basic relational database capable of processing basic SQL statements. 
+
+```bash 
+$ ./db "select * from class" 
+dbfile.bin size = 228
+SELECT statement
++----------------+----------------+----------------+----------------+----------------+
+|Student         |Gender          |Exams           |Quiz            |Total           |
++----------------+----------------+----------------+----------------+----------------+
+|Siu             |M               |             480|              80|             560|
+|Frank           |M               |             600|             100|             700|
+|Jordon          |M               |             450|              75|             525|
+|Jeff            |M               |             455|              60|             515|
+|Ying            |F               |             540|              85|             625|
+|David           |M               |             550|              83|             633|
+|euna            |F               |             460|              75|             535|
+|Victor          |M               |             475|              60|             535|
+|Linawati        |F               |             490|              86|             576|
+|Stephen         |M               |             520|              76|             596|
++----------------+----------------+----------------+----------------+----------------+
+10 rows selected.
+```
 
 Compiling 
 ---------
