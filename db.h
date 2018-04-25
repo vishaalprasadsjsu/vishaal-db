@@ -216,4 +216,4 @@ cd_entry *get_cd(char *table_name, char *col_name);
 int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, int *comp_type,
                      token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset);
 bool compare_records_by_val(const char *record_a, const char *record_b,
-                            cd_entry *order_cd, int field_offset);
+                            cd_entry *order_cd, int field_offset, bool desc);

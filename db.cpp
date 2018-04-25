@@ -1279,6 +1279,7 @@ int sem_select(token_list *t_list) {
   token_list *order_col_token = nullptr;
   cd_entry *order_col_cd = nullptr;
   int order_by_col_offset = 0;
+  bool order_desc = false;
 
   int first_comp_type = 0;
   token_list *first_comp_val_token = nullptr;
@@ -1332,10 +1333,7 @@ int sem_select(token_list *t_list) {
 
     cur_token = cur_token->next;
 
-    if (cur_token->tok_value != K_DESC) {
-      printf("must be order by desc\n");
-      return INVALID_STATEMENT;
-    }
+    order_desc = (cur_token->tok_value == K_DESC);
 
 
   } else if (cur_token->tok_class != terminator) {
@@ -1390,7 +1388,7 @@ int sem_select(token_list *t_list) {
 
   if (order_col_token != nullptr) {
     std::sort(record_heads.begin(), record_heads.end(), std::bind(compare_records_by_val, _1, _2,
-                        order_col_cd, order_by_col_offset));
+                        order_col_cd, order_by_col_offset, order_desc));
   }
 
   for (int i = 0; i < record_heads.size(); ++i) {
@@ -1533,7 +1531,6 @@ int sem_select_agg(token_list *t_list) {
 
       cur_token = second_comp_val_token->next;
     }
-
 
   } else if (cur_token->tok_class != terminator && cur_token->tok_value != K_ORDER) {
     return INVALID_STATEMENT;
@@ -2014,15 +2011,13 @@ int delete_tab_file(char *tab_name) {
 }
 
 bool compare_records_by_val(const char *record_a, const char *record_b,
-                                cd_entry *order_cd, int field_offset) {
-
-  // true for a < b
+                                cd_entry *order_cd, int field_offset, bool desc) {
 
   if ((int) ((record_a + field_offset)[0]) == 0) {
-    return true;
+    return false;
 
   } else if((int) ((record_b + field_offset)[0]) == 0) {
-    return false;
+    return true;
 
   } else if (order_cd->col_type == T_INT) {
 
@@ -2037,7 +2032,7 @@ bool compare_records_by_val(const char *record_a, const char *record_b,
     free(data_a);
     free(data_b);
 
-    return ret_val;
+    return desc != ret_val;
 
   } else {
 
@@ -2052,7 +2047,7 @@ bool compare_records_by_val(const char *record_a, const char *record_b,
     free(data_a);
     free(data_b);
 
-    return ret_val;
+    return desc != ret_val;
   }
 
 }
