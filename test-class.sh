@@ -1,6 +1,6 @@
 #!/bin/bash
 
-./db "create table class ( Student char(12), Gender char(1), Exams int, Quiz int, Total int )" ;
+./db "create table class ( Student char(12) NOT NULL, Gender char(1), Exams int, Quiz int, Total int )" ;
 
 ./db "insert into class values ('Siu', 'M', 480, 80, 560)" ;
 
