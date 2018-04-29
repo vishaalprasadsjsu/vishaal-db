@@ -68,64 +68,69 @@ typedef struct table_file_header_def {
 /* This enum defines the different classes of tokens for 
    semantic processing. */
 typedef enum t_class {
-  keyword = 1,  // 1
-  identifier,   // 2
-  symbol,       // 3
-  type_name,    // 4
-  constant,     // 5
-  function_name,// 6
-  terminator,   // 7
-  error         // 8
+  keyword = 1,
+  identifier,
+  symbol,
+  type_name,
+  constant,
+  function_name,
+  terminator,
+  error
 } token_class;
 
 /* This enum defines the different values associated with
    a single valid token.  Use for semantic processing. */
 typedef enum t_value {
-  T_INT = 10,   // 10 - new type should be added above this line
-  T_CHAR,       // 11 
-  T_VARCHAR,    // 12
-  K_CREATE,     // 13
-  K_TABLE,      // 14
-  K_NOT,        // 15
-  K_NULL,       // 16
-  K_DROP,       // 17
-  K_LIST,       // 18
-  K_SCHEMA,     // 19
-  K_FOR,        // 20
-  K_TO,         // 21
-  K_INSERT,     // 22
-  K_INTO,       // 23
-  K_VALUES,     // 24
-  K_DELETE,     // 25
-  K_FROM,       // 26
-  K_WHERE,      // 27
-  K_UPDATE,     // 28
-  K_SET,        // 29
-  K_SELECT,     // 30
-  K_ORDER,      // 31
-  K_BY,         // 32
-  K_DESC,       // 33
-  K_IS,         // 34
-  K_AND,        // 35
-  K_OR,         // 36 - new keyword should be added below this line
+  // new type should be added above this line
+  T_INT = 10,
+  T_CHAR,
+  T_VARCHAR,
+  K_CREATE,
+  K_TABLE,
+  K_NOT,
+  K_NULL,
+  K_DROP,
+  K_LIST,
+  K_SCHEMA,
+  K_FOR,
+  K_TO,
+  K_INSERT,
+  K_INTO,
+  K_VALUES,
+  K_DELETE,
+  K_FROM,
+  K_WHERE,
+  K_UPDATE,
+  K_SET,
+  K_SELECT,
+  K_ORDER,
+  K_BY,
+  K_DESC,
+  K_IS,
+  K_AND,
+  K_OR,
   K_BACKUP,
   K_RESTORE,
   K_ROLLFORWARD,
+  K_RF,
   F_SUM,
   F_AVG,
-  F_COUNT,            // - new function name should be added below this line
-  S_LEFT_PAREN = 70,  // 70
-  S_RIGHT_PAREN,      // 71
-  S_COMMA,            // 72
-  S_STAR,             // 73
-  S_EQUAL,            // 74
-  S_LESS,             // 75
-  S_GREATER,          // 76
-  IDENT = 85,         // 85
-  INT_LITERAL = 90,   // 90
-  STRING_LITERAL,     // 91
-  EOC = 95,           // 95
-  INVALID = 99        // 99
+  F_COUNT,
+  // new function name should be added below this line
+
+  S_LEFT_PAREN = 70,
+  S_RIGHT_PAREN,
+  S_COMMA,
+  S_STAR,
+  S_EQUAL,
+  S_LESS,
+  S_GREATER,
+
+  IDENT = 85,
+  INT_LITERAL = 90,
+  STRING_LITERAL,
+  EOC = 95,
+  INVALID = 99
 } token_value;
 
 /* This constants must be updated when add new keywords */
@@ -138,43 +143,47 @@ char *keyword_table[] =
         "int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema",
         "for", "to", "insert", "into", "values", "delete", "from", "where",
         "update", "set", "select", "order", "by", "desc", "is", "and", "or",
-        "backup", "restore", "rollforward", "sum", "avg", "count"
+        "backup", "restore", "rollforward", "rf", "sum", "avg", "count"
     };
 
 /* This enum defines a set of possible statements */
 typedef enum s_statement {
-  INVALID_STATEMENT = -199, // -199
-  CREATE_TABLE = 100,       // 100
-  DROP_TABLE,               // 101
-  LIST_TABLE,               // 102
-  LIST_SCHEMA,              // 103
-  INSERT,                   // 104
-  DELETE,                   // 105
-  UPDATE,                   // 106
-  SELECT,                   // 107
-  BACKUP
+  INVALID_STATEMENT = -199,
+
+  CREATE_TABLE = 100,
+  DROP_TABLE,
+  LIST_TABLE,
+  LIST_SCHEMA,
+  INSERT,
+  DELETE,
+  UPDATE,
+  SELECT,
+  BACKUP,
+  RESTORE
 } semantic_statement;
 
 /* This enum has a list of all the errors that should be detected
    by the program.  Can append to this if necessary. */
 typedef enum error_return_codes {
-  INVALID_TABLE_NAME = -399,  // -399
-  DUPLICATE_TABLE_NAME,       // -398
-  TABLE_NOT_EXIST,            // -397
-  INVALID_TABLE_DEFINITION,   // -396
-  INVALID_COLUMN_NAME,        // -395
-  DUPLICATE_COLUMN_NAME,      // -394
-  COLUMN_NOT_EXIST,           // -393
-  MAX_COLUMN_EXCEEDED,        // -392
-  INVALID_TYPE_NAME,          // -391
-  INVALID_COLUMN_DEFINITION,  // -390
-  INVALID_COLUMN_LENGTH,      // -389
-  INVALID_REPORT_FILE_NAME,   // -388
-  INVALID_INSERT_STATEMENT,   // -397
-  /* Must add all the possible errors from I/U/D + SELECT here */
-  FILE_OPEN_ERROR = -299,     // -299
-  DBFILE_CORRUPTION,          // -298
-  MEMORY_ERROR                // -297
+  INVALID_TABLE_NAME = -399,
+  DUPLICATE_TABLE_NAME,
+  TABLE_NOT_EXIST,
+  INVALID_TABLE_DEFINITION,
+  INVALID_COLUMN_NAME,
+  DUPLICATE_COLUMN_NAME,
+  COLUMN_NOT_EXIST,
+  MAX_COLUMN_EXCEEDED,
+  INVALID_TYPE_NAME,
+  INVALID_COLUMN_DEFINITION,
+  INVALID_COLUMN_LENGTH,
+  INVALID_REPORT_FILE_NAME,
+  INVALID_INSERT_STATEMENT,
+
+  // add all the possible errors from I/U/D + SELECT here */
+
+  FILE_OPEN_ERROR = -299,
+  DBFILE_CORRUPTION,
+  MEMORY_ERROR
 } return_codes;
 
 /* Set of function prototypes */
