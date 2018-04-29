@@ -4,6 +4,7 @@ db.h - This file contains all the structures, defines, and function
 *********************************************************************/
 
 #include <stdio.h>
+#include <string>
 
 #define MAX_IDENT_LEN   16
 #define MAX_NUM_COL     16
@@ -13,36 +14,33 @@ db.h - This file contains all the structures, defines, and function
 #define NUMBER_BREAK    " ),"
 
 /* Column descriptor structure = 20+4+4+4+4 = 36 bytes */
-typedef struct cd_entry_def
-{
-  char    col_name[MAX_IDENT_LEN+4];
-  int     col_id;                   /* Start from 0 */
-  int     col_type;
-  int     col_len;
-  int     not_null;
+typedef struct cd_entry_def {
+  char col_name[MAX_IDENT_LEN + 4];
+  int col_id;                   /* Start from 0 */
+  int col_type;
+  int col_len;
+  int not_null;
 } cd_entry;
 
 /* Table packed descriptor structure = 4+20+4+4+4 = 36 bytes
    Minimum of 1 column in a table - therefore minimum size of
    1 valid tpd_entry is 36+36 = 72 bytes. */
-typedef struct tpd_entry_def
-{
-  int       tpd_size;
-  char      table_name[MAX_IDENT_LEN+4];
-  int       num_columns;
-  int       cd_offset;
-  int       tpd_flags;
+typedef struct tpd_entry_def {
+  int tpd_size;
+  char table_name[MAX_IDENT_LEN + 4];
+  int num_columns;
+  int cd_offset;
+  int tpd_flags;
 } tpd_entry;
 
 /* Table packed descriptor list = 4+4+4+36 = 48 bytes.  When no
    table is defined the tpd_list is 48 bytes.  When there is 
    at least 1 table, then the tpd_entry (36 bytes) will be
    overlapped by the first valid tpd_entry. */
-typedef struct tpd_list_def
-{
-  int       list_size;
-  int       num_tables;
-  int       db_flags;
+typedef struct tpd_list_def {
+  int list_size;
+  int num_tables;
+  int db_flags;
   tpd_entry tpd_start;
 } tpd_list;
 
@@ -50,29 +48,26 @@ typedef struct tpd_list_def
    string into separate tokens in function get_tokens().  For
    each token, a new token_list will be allocated and linked 
    together. */
-typedef struct t_list
-{
-  char  tok_string[MAX_TOK_LEN];
-  int   tok_class;
-  int   tok_value;
+typedef struct t_list {
+  char tok_string[MAX_TOK_LEN];
+  int tok_class;
+  int tok_value;
   struct t_list *next;
 } token_list;
 
 /* Table header, at start of a .tab file */
-typedef struct table_file_header_def
-{
-  int    file_size;        // 4 bytes
-  int    record_size;      // 4 bytes
-  int    num_records;      // 4 bytes
-  int    record_offset;    // 4 bytes
-  int    file_header_flag; // 4 bytes
-  tpd_entry  *tpd_ptr;         // 4 bytes [?]
+typedef struct table_file_header_def {
+  int file_size;        // 4 bytes
+  int record_size;      // 4 bytes
+  int num_records;      // 4 bytes
+  int record_offset;    // 4 bytes
+  int file_header_flag; // 4 bytes
+  tpd_entry *tpd_ptr;         // 4 bytes [?]
 } table_file_header;           // minimum size = 24
 
 /* This enum defines the different classes of tokens for 
    semantic processing. */
-typedef enum t_class
-{
+typedef enum t_class {
   keyword = 1,  // 1
   identifier,   // 2
   symbol,       // 3
@@ -85,8 +80,7 @@ typedef enum t_class
 
 /* This enum defines the different values associated with
    a single valid token.  Use for semantic processing. */
-typedef enum t_value
-{
+typedef enum t_value {
   T_INT = 10,   // 10 - new type should be added above this line
   T_CHAR,       // 11 
   T_VARCHAR,    // 12
@@ -137,16 +131,15 @@ typedef enum t_value
 /* New keyword must be added in the same position/order as the enum
    definition above, otherwise the lookup will be wrong */
 char *keyword_table[] =
-{
-  "int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema",
-  "for", "to", "insert", "into", "values", "delete", "from", "where",
-  "update", "set", "select", "order", "by", "desc", "is", "and", "or",
-  "sum", "avg", "count"
-};
+    {
+        "int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema",
+        "for", "to", "insert", "into", "values", "delete", "from", "where",
+        "update", "set", "select", "order", "by", "desc", "is", "and", "or",
+        "sum", "avg", "count"
+    };
 
 /* This enum defines a set of possible statements */
-typedef enum s_statement
-{
+typedef enum s_statement {
   INVALID_STATEMENT = -199, // -199
   CREATE_TABLE = 100,       // 100
   DROP_TABLE,               // 101
@@ -160,8 +153,7 @@ typedef enum s_statement
 
 /* This enum has a list of all the errors that should be detected
    by the program.  Can append to this if necessary. */
-typedef enum error_return_codes
-{
+typedef enum error_return_codes {
   INVALID_TABLE_NAME = -399,  // -399
   DUPLICATE_TABLE_NAME,       // -398
   TABLE_NOT_EXIST,            // -397
@@ -199,11 +191,11 @@ int sem_delete_value(token_list *cur_token);
   Keep a global list of tpd - in real life, this will be stored
   in shared memory.  Build a set of functions/methods around this.
 */
-tpd_list  *g_tpd_list;
+tpd_list *g_tpd_list;
 int initialize_tpd_list();
 int add_tpd_to_list(tpd_entry *tpd);
 int drop_tpd_from_list(char *tabname);
-tpd_entry* get_tpd_from_list(char *tabname);
+tpd_entry *get_tpd_from_list(char *tabname);
 
 int create_table_data_file(char *tab_name, table_file_header *table_file_header, size_t size);
 table_file_header *get_file_header(char *tab_name);
@@ -217,3 +209,5 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
                      token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset);
 bool compare_records_by_val(const char *record_a, const char *record_b,
                             cd_entry *order_cd, int field_offset, bool desc);
+int add_to_log(token_list *first_token);
+std::string get_timestamp();

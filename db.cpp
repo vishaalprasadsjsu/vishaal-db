@@ -15,6 +15,8 @@
 #include <cmath>
 #include <vector>
 #include <functional>
+#include <tiff.h>
+
 using namespace std::placeholders;
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -270,9 +272,11 @@ void add_to_list(token_list **tok_list, char *tmp, int t_class, int t_value) {
 }
 
 int do_semantic(token_list *tok_list) {
+  token_list *first_token = tok_list;
   int rc = 0, cur_cmd = INVALID_STATEMENT;
   bool unique = false;
   token_list *cur = tok_list;
+  bool should_add_to_log = false;
 
   if ((cur->tok_value == K_CREATE) &&
       ((cur->next != NULL) && (cur->next->tok_value == K_TABLE))) {
@@ -331,30 +335,42 @@ int do_semantic(token_list *tok_list) {
     switch (cur_cmd) {
       case CREATE_TABLE:
         rc = sem_create_table(cur);
+        should_add_to_log = !rc;
         break;
       case DROP_TABLE:
         rc = sem_drop_table(cur);
+        should_add_to_log = !rc;
         break;
       case LIST_TABLE:
         rc = sem_list_tables();
+        should_add_to_log = false;
         break;
       case LIST_SCHEMA:
         rc = sem_list_schema(cur);
+        should_add_to_log = false;
         break;
       case INSERT:
         rc = sem_insert_value(cur);
+        should_add_to_log = !rc;
         break;
       case SELECT:
         rc = sem_select(cur);
+        should_add_to_log = false;
         break;
       case DELETE:
         rc = sem_delete_value(cur);
+        should_add_to_log = !rc;
         break;
       case UPDATE:
         rc = sem_update_value(cur);
+        should_add_to_log = !rc;
         break;
       default:
         break;
+    }
+
+    if (should_add_to_log) {
+      add_to_log(first_token);
     }
   }
 
@@ -865,6 +881,52 @@ int sem_insert_value(token_list *t_list) {
   printf("%s.tab size: %d. Number of records: %d\n", table_name, file_header->file_size, file_header->num_records);
 
   return rc;
+}
+
+int add_to_log(token_list *first_token) {
+  int rc = 0;
+
+  token_list *cur_token = first_token;
+
+  FILE *fhandle = nullptr;
+
+  std::string log_file_name = "db.log";
+  std::string space = " ";
+  std::string new_line = "\n";
+  std::string quote = "\"";
+
+  fhandle = fopen(log_file_name.c_str(), "a");
+
+  if (fhandle != nullptr) {
+
+    const char *timestamp = get_timestamp().c_str();
+    fwrite(timestamp, sizeof(char), 14, fhandle);
+    fwrite(space.c_str(), sizeof(char), 1, fhandle);
+    fwrite(quote.c_str(), sizeof(char), 1, fhandle);
+
+    while (cur_token->tok_class != terminator) {
+      fwrite(cur_token->tok_string, sizeof(char), sizeof(cur_token->tok_string), fhandle);
+      fwrite(space.c_str(), sizeof(char), 1, fhandle);
+      cur_token = cur_token->next;
+    }
+
+    fwrite(quote.c_str(), sizeof(char), 1, fhandle);
+    fwrite(new_line.c_str(), sizeof(char), 1, fhandle);
+
+    fflush(fhandle);
+    fclose(fhandle);
+
+  }
+
+  return rc;
+}
+
+std::string get_timestamp() {
+  int64 timestamp = time(nullptr);
+  char data[15];
+  tm time_struct;
+  strftime(data, sizeof(data), "%Y%m%d%H%M%S", localtime_r(&timestamp, &time_struct));
+  return std::string(data);
 }
 
 void append_zeros_to_tab(char *tab_name, int how_many_bytes) {
