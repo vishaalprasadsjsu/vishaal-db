@@ -16,6 +16,8 @@
 #include <vector>
 #include <functional>
 #include <tiff.h>
+#include <fstream>
+#include <dirent.h>
 
 using namespace std::placeholders;
 
@@ -319,6 +321,13 @@ int do_semantic(token_list *tok_list) {
     cur_cmd = DELETE;
     cur = cur->next->next;
 
+  } else if ((cur->tok_value == K_BACKUP) &&
+             ((cur->next != NULL) && (cur->next->tok_value == K_TO))) {
+
+    printf("BACKUP statement\n");
+    cur_cmd = BACKUP;
+    cur = cur->next->next;
+
   } else if (cur->tok_value == K_UPDATE && cur->next != nullptr
              && cur->next->next != nullptr && cur->next->next->tok_value == K_SET) {
 
@@ -365,6 +374,9 @@ int do_semantic(token_list *tok_list) {
         rc = sem_update_value(cur);
         should_add_to_log = !rc;
         break;
+      case BACKUP:
+        rc = sem_backup(cur);
+        should_add_to_log = !rc;
       default:
         break;
     }
@@ -883,11 +895,39 @@ int sem_insert_value(token_list *t_list) {
   return rc;
 }
 
-int add_to_log(token_list *first_token) {
+int sem_backup(token_list *cur_token) {
   int rc = 0;
 
-  token_list *cur_token = first_token;
+  std::string backup_filename = std::string(cur_token->tok_string);
 
+  if (backup_filename.find(std::string(".")) != std::string::npos) {
+    printf("Error: backup file name cannot contain an extension\n");
+    return -1;
+  }
+
+  std::ifstream infile(cur_token->tok_string);
+  if (infile.good()) {
+    printf("Error: backup file already exists\n");
+    return -1;
+  }
+
+  std::ifstream if_dbfile("dbfile.bin", std::ios_base::binary);
+  std::ofstream of_backup(backup_filename, std::ios_base::binary);
+  of_backup << if_dbfile.rdbuf();
+
+  tpd_entry *curr_tpd = &(g_tpd_list->tpd_start);
+  for (int i = 0; i < g_tpd_list->num_tables; ++i, ++curr_tpd) {
+    std::string tab_file_name = std::string(curr_tpd->table_name) + ".tab";
+    std::ifstream if_cur_tab(tab_file_name, std::ios_base::binary);
+    of_backup << if_cur_tab.rdbuf();
+  }
+
+  return rc;
+}
+
+int add_to_log(token_list *first_token) {
+  int rc = 0;
+  token_list *cur_token = first_token;
   FILE *fhandle = nullptr;
 
   std::string log_file_name = "db.log";
@@ -915,8 +955,7 @@ int add_to_log(token_list *first_token) {
 
     fflush(fhandle);
     fclose(fhandle);
-
-  }
+  } else return -1;
 
   return rc;
 }

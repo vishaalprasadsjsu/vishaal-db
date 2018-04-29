@@ -108,9 +108,12 @@ typedef enum t_value {
   K_IS,         // 34
   K_AND,        // 35
   K_OR,         // 36 - new keyword should be added below this line
-  F_SUM,        // 37
-  F_AVG,        // 38
-  F_COUNT,      // 39 - new function name should be added below this line
+  K_BACKUP,
+  K_RESTORE,
+  K_ROLLFORWARD,
+  F_SUM,
+  F_AVG,
+  F_COUNT,            // - new function name should be added below this line
   S_LEFT_PAREN = 70,  // 70
   S_RIGHT_PAREN,      // 71
   S_COMMA,            // 72
@@ -135,7 +138,7 @@ char *keyword_table[] =
         "int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema",
         "for", "to", "insert", "into", "values", "delete", "from", "where",
         "update", "set", "select", "order", "by", "desc", "is", "and", "or",
-        "sum", "avg", "count"
+        "backup", "restore", "rollforward", "sum", "avg", "count"
     };
 
 /* This enum defines a set of possible statements */
@@ -148,7 +151,8 @@ typedef enum s_statement {
   INSERT,                   // 104
   DELETE,                   // 105
   UPDATE,                   // 106
-  SELECT                    // 107
+  SELECT,                   // 107
+  BACKUP
 } semantic_statement;
 
 /* This enum has a list of all the errors that should be detected
@@ -186,6 +190,7 @@ int sem_select_agg(token_list *t_list);
 int sem_insert_value(token_list *cur_token);
 int sem_update_value(token_list *cur_token);
 int sem_delete_value(token_list *cur_token);
+int sem_backup(token_list *cur_token);
 
 /*
   Keep a global list of tpd - in real life, this will be stored
