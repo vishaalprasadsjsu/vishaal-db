@@ -116,3 +116,4 @@ fabric.properties
 *.tab
 db
 db.log
+*.zip

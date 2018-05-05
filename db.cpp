@@ -335,6 +335,13 @@ int do_semantic(token_list *tok_list) {
     cur_cmd = UPDATE;
     cur = cur->next;
 
+  } else if (cur->tok_value == K_RESTORE && cur->next != nullptr
+             && cur->next->next != nullptr && cur->next->tok_value == K_FROM) {
+
+    printf("RESTORE statement\n");
+    cur_cmd = RESTORE;
+    cur = cur->next->next;
+
   } else {
     printf("Invalid statement\n");
     rc = cur_cmd;
@@ -377,6 +384,11 @@ int do_semantic(token_list *tok_list) {
       case BACKUP:
         rc = sem_backup(cur);
         should_add_to_log = !rc;
+        break;
+      case RESTORE:
+        rc = sem_restore(cur);
+        should_add_to_log = false;
+        break;
       default:
         break;
     }
@@ -916,10 +928,12 @@ int sem_backup(token_list *cur_token) {
   of_backup << if_dbfile.rdbuf();
 
   tpd_entry *curr_tpd = &(g_tpd_list->tpd_start);
-  for (int i = 0; i < g_tpd_list->num_tables; ++i, ++curr_tpd) {
+  for (int i = 0; i < g_tpd_list->num_tables; ++i) {
     std::string tab_file_name = std::string(curr_tpd->table_name) + ".tab";
     std::ifstream if_cur_tab(tab_file_name, std::ios_base::binary);
     of_backup << if_cur_tab.rdbuf();
+    // if_cur_tab.close();
+    curr_tpd = (tpd_entry *) ((char *) curr_tpd + curr_tpd->tpd_size);
   }
 
   return rc;
@@ -933,7 +947,8 @@ int add_to_log(token_list *first_token) {
   std::string log_file_name = "db.log";
   std::string space = " ";
   std::string new_line = "\n";
-  std::string quote = "\"";
+  std::string double_quote = "\"";
+  std::string single_quote = "\'";
 
   fhandle = fopen(log_file_name.c_str(), "a");
 
@@ -942,22 +957,118 @@ int add_to_log(token_list *first_token) {
     const char *timestamp = get_timestamp().c_str();
     fwrite(timestamp, sizeof(char), 14, fhandle);
     fwrite(space.c_str(), sizeof(char), 1, fhandle);
-    fwrite(quote.c_str(), sizeof(char), 1, fhandle);
+    fwrite(double_quote.c_str(), sizeof(char), 1, fhandle);
 
     while (cur_token->tok_class != terminator) {
+
+      if (cur_token->tok_value == STRING_LITERAL) {
+        fwrite(single_quote.c_str(), sizeof(char), 1, fhandle);
+      }
+
       fwrite(cur_token->tok_string, sizeof(char), sizeof(cur_token->tok_string), fhandle);
+
+      if (cur_token->tok_value == STRING_LITERAL) {
+        fwrite(single_quote.c_str(), sizeof(char), 1, fhandle);
+      }
+
       fwrite(space.c_str(), sizeof(char), 1, fhandle);
       cur_token = cur_token->next;
     }
 
-    fwrite(quote.c_str(), sizeof(char), 1, fhandle);
+    fwrite(double_quote.c_str(), sizeof(char), 1, fhandle);
     fwrite(new_line.c_str(), sizeof(char), 1, fhandle);
 
     fflush(fhandle);
     fclose(fhandle);
+
   } else return -1;
 
   return rc;
+}
+
+int sem_restore(token_list *cur_token) {
+
+  std::string backup_filename = cur_token->tok_string;
+  cur_token = cur_token->next;
+
+  bool should_rf = !(cur_token->tok_class != terminator
+                     && cur_token->tok_value == K_WITHOUT
+                     && cur_token->next->tok_class != terminator
+                     && cur_token->next->tok_value == K_RF);
+
+  std::ifstream infile(backup_filename);
+  if (!infile.good()) {
+    printf("Error: backup file not found\n");
+    return -1;
+  }
+
+  tpd_entry *curr_tpd = &(g_tpd_list->tpd_start);
+  for (int i = 0; i < g_tpd_list->num_tables; ++i, ++curr_tpd) {
+    std::string tab_file_name = std::string(curr_tpd->table_name) + ".tab";
+    remove(tab_file_name.c_str());
+  }
+
+  remove("dbfile.bin");
+
+  FILE *dbfile_handle = nullptr;
+  FILE *backup_handle = nullptr;
+  FILE *cur_table_handle = nullptr;
+
+  // create dfbile.bin
+  dbfile_handle = fopen("dbfile.bin", "w+");
+  backup_handle = fopen(backup_filename.c_str(), "r");
+
+  int dbfile_size = 0;
+  fread(&dbfile_size, sizeof(int), 1, backup_handle);
+  rewind(backup_handle);
+
+  char *dbfile_data = (char *) calloc(1, (size_t) dbfile_size);
+  fread(dbfile_data, (size_t) dbfile_size, 1, backup_handle);
+  tpd_list *new_tpd_list = (tpd_list *) dbfile_data;
+  new_tpd_list->db_flags = should_rf ? 1 : 0;
+  fwrite(dbfile_data, (size_t) dbfile_size, 1, dbfile_handle);
+  fflush(dbfile_handle);
+  fclose(dbfile_handle);
+  dbfile_handle = fopen("dbfile.bin", "r");
+
+  fread(new_tpd_list, 1, sizeof(tpd_list), dbfile_handle);
+  curr_tpd = &(new_tpd_list->tpd_start);
+
+  for (int i = 0; i < new_tpd_list->num_tables; ++i) {
+
+    int cur_table_file_size = 0;
+    fread(&cur_table_file_size, sizeof(int), 1, backup_handle);
+    fseek(backup_handle, -sizeof(int), SEEK_CUR);
+
+    std::string cur_file_name = std::string(curr_tpd->table_name) + ".tab";
+    cur_table_handle = fopen(cur_file_name.c_str(), "w+");
+
+    char *cur_tab_data = (char *) calloc(1, (size_t) cur_table_file_size);
+    fread(cur_tab_data, (size_t) cur_table_file_size, 1, backup_handle);
+    fwrite(cur_tab_data, (size_t) cur_table_file_size, 1, cur_table_handle);
+    fflush(cur_table_handle);
+    fclose(cur_table_handle);
+
+    free(cur_tab_data);
+
+    curr_tpd = (tpd_entry *) ((char *) curr_tpd + curr_tpd->tpd_size);
+  }
+
+  // TODO -- handle RF in log
+  // no RF -- prune log entries after backup
+  //    RF -- add RFSTART line to log
+
+  if (should_rf) {
+
+  } else {
+
+  }
+
+
+
+  fclose(backup_handle);
+  free(dbfile_data);
+  return 0;
 }
 
 std::string get_timestamp() {

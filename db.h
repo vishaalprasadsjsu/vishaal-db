@@ -113,6 +113,7 @@ typedef enum t_value {
   K_RESTORE,
   K_ROLLFORWARD,
   K_RF,
+  K_WITHOUT,
   F_SUM,
   F_AVG,
   F_COUNT,
@@ -139,12 +140,10 @@ typedef enum t_value {
 /* New keyword must be added in the same position/order as the enum
    definition above, otherwise the lookup will be wrong */
 char *keyword_table[] =
-    {
-        "int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema",
-        "for", "to", "insert", "into", "values", "delete", "from", "where",
-        "update", "set", "select", "order", "by", "desc", "is", "and", "or",
-        "backup", "restore", "rollforward", "rf", "sum", "avg", "count"
-    };
+    {"int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema", "for",
+     "to", "insert", "into", "values", "delete", "from", "where", "update", "set", "select",
+     "order", "by", "desc", "is", "and", "or", "backup", "restore", "rollforward", "rf", "without",
+     "sum", "avg", "count"};
 
 /* This enum defines a set of possible statements */
 typedef enum s_statement {
@@ -200,6 +199,7 @@ int sem_insert_value(token_list *cur_token);
 int sem_update_value(token_list *cur_token);
 int sem_delete_value(token_list *cur_token);
 int sem_backup(token_list *cur_token);
+int sem_restore(token_list *cur_token);
 
 /*
   Keep a global list of tpd - in real life, this will be stored
