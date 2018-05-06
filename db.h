@@ -5,6 +5,7 @@ db.h - This file contains all the structures, defines, and function
 
 #include <stdio.h>
 #include <string>
+#include <locale>
 
 #define MAX_IDENT_LEN   16
 #define MAX_NUM_COL     16
@@ -135,7 +136,7 @@ typedef enum t_value {
 } token_value;
 
 /* This constants must be updated when add new keywords */
-#define TOTAL_KEYWORDS_PLUS_TYPE_NAMES 30
+#define TOTAL_KEYWORDS_PLUS_TYPE_NAMES 35
 
 /* New keyword must be added in the same position/order as the enum
    definition above, otherwise the lookup will be wrong */
@@ -158,7 +159,8 @@ typedef enum s_statement {
   UPDATE,
   SELECT,
   BACKUP,
-  RESTORE
+  RESTORE,
+  ROLLFORWARD
 } semantic_statement;
 
 /* This enum has a list of all the errors that should be detected
@@ -200,12 +202,15 @@ int sem_update_value(token_list *cur_token);
 int sem_delete_value(token_list *cur_token);
 int sem_backup(token_list *cur_token);
 int sem_restore(token_list *cur_token);
+int sem_rollforward(token_list *cur_token);
 
 /*
   Keep a global list of tpd - in real life, this will be stored
   in shared memory.  Build a set of functions/methods around this.
 */
 tpd_list *g_tpd_list;
+bool is_rollforwarding = false;
+
 int initialize_tpd_list();
 int add_tpd_to_list(tpd_entry *tpd);
 int drop_tpd_from_list(char *tabname);
@@ -223,5 +228,6 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
                      token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset);
 bool compare_records_by_val(const char *record_a, const char *record_b,
                             cd_entry *order_cd, int field_offset, bool desc);
-int add_to_log(token_list *first_token);
+int add_to_log_end(token_list *first_token);
 std::string get_timestamp();
+bool is_timestamp_before(std::string first, std::string second);

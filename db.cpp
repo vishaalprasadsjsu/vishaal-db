@@ -16,8 +16,10 @@
 #include <vector>
 #include <functional>
 #include <tiff.h>
+#include <iostream>
 #include <fstream>
 #include <dirent.h>
+#include <sstream>
 
 using namespace std::placeholders;
 
@@ -342,9 +344,20 @@ int do_semantic(token_list *tok_list) {
     cur_cmd = RESTORE;
     cur = cur->next->next;
 
+  } else if (cur->tok_value == K_ROLLFORWARD && cur->next != nullptr) {
+
+    printf("ROLLFORWARD statement\n");
+    cur_cmd = ROLLFORWARD;
+    cur = cur->next;
+
   } else {
     printf("Invalid statement\n");
     rc = cur_cmd;
+  }
+
+  if (g_tpd_list->db_flags && cur_cmd != ROLLFORWARD && !is_rollforwarding) {
+    printf("ROLLFWORAD PENDING\nDID NOT EXECUTE STATEMENT\n");
+    return -1;
   }
 
   if (cur_cmd != INVALID_STATEMENT) {
@@ -389,12 +402,16 @@ int do_semantic(token_list *tok_list) {
         rc = sem_restore(cur);
         should_add_to_log = false;
         break;
+      case ROLLFORWARD:
+        rc = sem_rollforward(cur);
+        should_add_to_log = false;
+        break;
       default:
         break;
     }
 
     if (should_add_to_log) {
-      add_to_log(first_token);
+      add_to_log_end(first_token);
     }
   }
 
@@ -939,10 +956,122 @@ int sem_backup(token_list *cur_token) {
   return rc;
 }
 
-int add_to_log(token_list *first_token) {
+int sem_rollforward(token_list *cur_token) {
+
+  bool to_end = true;
+  std::string end_timestamp;
+
+  if (cur_token->tok_value == K_TO) {
+    to_end = false;
+    end_timestamp = cur_token->next->tok_string;
+  }
+
+  std::ifstream t("db.log");
+  std::stringstream buffer;
+  buffer << t.rdbuf();
+  std::string entire_log_str = buffer.str();
+
+  std::string before_rf = entire_log_str.substr(0, entire_log_str.find("RF_START"));
+  std::string after_rf = entire_log_str.substr(entire_log_str.find("RF_START") + 9);
+
+  int after_rf_index = 0;
+
+  is_rollforwarding = true;
+  int end_of_last_line_executed = 0;
+  int num_lines_executed = 0;
+
+  std::string curr_timestamp = after_rf.substr(after_rf_index, 14);
+
+  while (after_rf_index < after_rf.length()
+         && (to_end || is_timestamp_before(curr_timestamp, end_timestamp))) {
+
+    // entire command without quotes
+    std::string cur_command_str =
+        after_rf.substr((unsigned long) (after_rf_index + 16),
+                        after_rf.find("\"", after_rf_index + 20) - (after_rf_index + 16));
+
+    // run the SQL query
+    token_list *cur_statement = nullptr;
+    char *command = (char *) calloc(cur_command_str.length(), sizeof(char));
+    memccpy(command, cur_command_str.c_str(), 1, cur_command_str.length());
+    get_token(command, &cur_statement);
+    do_semantic(cur_statement);
+    free(command);
+
+    num_lines_executed++;
+
+    after_rf_index += (18 + cur_command_str.length()); // points to next timestamp
+    end_of_last_line_executed = after_rf_index;
+
+    if ((after_rf_index + 14) < after_rf.length()) {
+      curr_timestamp =  after_rf.substr(after_rf_index, 14);
+    }
+  }
+
+  FILE *dbfile_handle = nullptr;
+  dbfile_handle = fopen("dbfile.bin", "r+");
+  int dbfile_size = 0;
+  fread(&dbfile_size, sizeof(int), 1, dbfile_handle);
+  rewind(dbfile_handle);
+  char *dbfile_data = (char *) calloc(1, (size_t) dbfile_size);
+  fread(dbfile_data, (size_t) dbfile_size, 1, dbfile_handle);
+  tpd_list *tpd_list_on_disk = (tpd_list *) dbfile_data;
+  tpd_list_on_disk->db_flags = 0;
+
+  fflush(dbfile_handle);
+  fclose(dbfile_handle);
+
+  remove("dbfile.bin");
+
+  dbfile_handle = fopen("dbfile.bin", "w+");
+
+  fwrite(dbfile_data, (size_t) dbfile_size, 1, dbfile_handle);
+  fflush(dbfile_handle);
+  fclose(dbfile_handle);
+  free(dbfile_data);
+
+  remove("db.log");
+  std::ofstream log_out_stream;
+  log_out_stream.open("db.log", std::ios_base::app);
+  log_out_stream << before_rf;
+
+  if (num_lines_executed) {
+    log_out_stream << after_rf.substr(0, end_of_last_line_executed);
+  }
+
+  log_out_stream.close();
+
+  return 0;
+}
+
+/**
+ * @param first 14-character timestamp
+ * @param second 14-character timestamp
+ * @return true if first is before second
+ */
+bool is_timestamp_before(const std::string first, const std::string second) {
+
+  if (first.length() != 14 || second.length() != 14) return false;
+
+  const char *first_arr = first.c_str();
+  const char *second_arr = second.c_str();
+
+  for (int i = 0; i < 14; i++) {
+
+    if (first_arr[i] > second_arr[i]) return false;
+
+    else if (first_arr[i] < second_arr[i]) return true;
+
+  }
+
+  return true;
+
+}
+
+int add_to_log_end(token_list *first_token) {
   int rc = 0;
   token_list *cur_token = first_token;
-  FILE *fhandle = nullptr;
+  std::ofstream out_stream;
 
   std::string log_file_name = "db.log";
   std::string space = " ";
@@ -950,38 +1079,35 @@ int add_to_log(token_list *first_token) {
   std::string double_quote = "\"";
   std::string single_quote = "\'";
 
-  fhandle = fopen(log_file_name.c_str(), "a");
+  out_stream.open(log_file_name.c_str(), std::ios_base::app);
 
-  if (fhandle != nullptr) {
+  const char *timestamp = get_timestamp().c_str();
 
-    const char *timestamp = get_timestamp().c_str();
-    fwrite(timestamp, sizeof(char), 14, fhandle);
-    fwrite(space.c_str(), sizeof(char), 1, fhandle);
-    fwrite(double_quote.c_str(), sizeof(char), 1, fhandle);
+  out_stream << timestamp;
+  out_stream << space;
+  out_stream << double_quote;
 
-    while (cur_token->tok_class != terminator) {
+  while (cur_token->tok_class != terminator) {
 
-      if (cur_token->tok_value == STRING_LITERAL) {
-        fwrite(single_quote.c_str(), sizeof(char), 1, fhandle);
-      }
-
-      fwrite(cur_token->tok_string, sizeof(char), sizeof(cur_token->tok_string), fhandle);
-
-      if (cur_token->tok_value == STRING_LITERAL) {
-        fwrite(single_quote.c_str(), sizeof(char), 1, fhandle);
-      }
-
-      fwrite(space.c_str(), sizeof(char), 1, fhandle);
-      cur_token = cur_token->next;
+    if (cur_token->tok_value == STRING_LITERAL) {
+      out_stream << single_quote;
     }
 
-    fwrite(double_quote.c_str(), sizeof(char), 1, fhandle);
-    fwrite(new_line.c_str(), sizeof(char), 1, fhandle);
+    out_stream << cur_token->tok_string;
 
-    fflush(fhandle);
-    fclose(fhandle);
+    if (cur_token->tok_value == STRING_LITERAL) {
+      out_stream << single_quote;
+    }
 
-  } else return -1;
+    out_stream << space;
+
+    cur_token = cur_token->next;
+  }
+
+  out_stream << double_quote;
+  out_stream << new_line;
+
+  out_stream.close();
 
   return rc;
 }
@@ -1054,17 +1180,34 @@ int sem_restore(token_list *cur_token) {
     curr_tpd = (tpd_entry *) ((char *) curr_tpd + curr_tpd->tpd_size);
   }
 
-  // TODO -- handle RF in log
-  // no RF -- prune log entries after backup
-  //    RF -- add RFSTART line to log
+  std::ifstream t("db.log");
+  std::stringstream buffer;
+  buffer << t.rdbuf();
+
+  std::string log_str = buffer.str();
+
+  std::string log_str_upper = log_str;
+  std::transform(log_str_upper.begin(), log_str_upper.end(), log_str_upper.begin(), ::toupper);
+
+  std::string backup_str = "BACKUP TO " + backup_filename + " \"";
+  std::transform(backup_str.begin(), backup_str.end(), backup_str.begin(), ::toupper);
+
+  int backup_str_pos = (int) log_str_upper.find(backup_str);
+
+  std::string new_log_content = log_str.substr(0, backup_str_pos + backup_str.length());
+  new_log_content += "\n";
 
   if (should_rf) {
-
-  } else {
-
+    new_log_content += "RF_START";
+    new_log_content += log_str.substr(backup_str_pos + backup_str.length());
   }
 
+  remove("db.log");
 
+  std::ofstream out_stream;
+  out_stream.open("db.log", std::ios_base::app);
+  out_stream << new_log_content;
+  out_stream.close();
 
   fclose(backup_handle);
   free(dbfile_data);
