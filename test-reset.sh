@@ -6,7 +6,7 @@ rm dbfile.bin
 
 rm ./db
 
-rm db.log 
+rm db.log*
 
 c++ -std=c++11 -m32 db.cpp -o db
 

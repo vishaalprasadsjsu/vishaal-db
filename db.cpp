@@ -956,6 +956,120 @@ int sem_backup(token_list *cur_token) {
   return rc;
 }
 
+int sem_restore(token_list *cur_token) {
+
+  std::string backup_filename = cur_token->tok_string;
+  cur_token = cur_token->next;
+
+  bool should_rf = !(cur_token->tok_class != terminator
+                     && cur_token->tok_value == K_WITHOUT
+                     && cur_token->next->tok_class != terminator
+                     && cur_token->next->tok_value == K_RF);
+
+  std::ifstream infile(backup_filename);
+  if (!infile.good()) {
+    printf("Error: backup file not found\n");
+    return -1;
+  }
+
+  tpd_entry *curr_tpd = &(g_tpd_list->tpd_start);
+  for (int i = 0; i < g_tpd_list->num_tables; ++i, ++curr_tpd) {
+    std::string tab_file_name = std::string(curr_tpd->table_name) + ".tab";
+    remove(tab_file_name.c_str());
+  }
+
+  remove("dbfile.bin");
+
+  FILE *dbfile_handle = nullptr;
+  FILE *backup_handle = nullptr;
+  FILE *cur_table_handle = nullptr;
+
+  // create dfbile.bin
+  dbfile_handle = fopen("dbfile.bin", "w+");
+  backup_handle = fopen(backup_filename.c_str(), "r");
+
+  int dbfile_size = 0;
+  fread(&dbfile_size, sizeof(int), 1, backup_handle);
+  rewind(backup_handle);
+
+  char *dbfile_data = (char *) calloc(1, (size_t) dbfile_size);
+  fread(dbfile_data, (size_t) dbfile_size, 1, backup_handle);
+  tpd_list *new_tpd_list = (tpd_list *) dbfile_data;
+  new_tpd_list->db_flags = should_rf ? 1 : 0;
+  fwrite(dbfile_data, (size_t) dbfile_size, 1, dbfile_handle);
+  fflush(dbfile_handle);
+  fclose(dbfile_handle);
+  dbfile_handle = fopen("dbfile.bin", "r");
+
+  fread(new_tpd_list, 1, sizeof(tpd_list), dbfile_handle);
+  curr_tpd = &(new_tpd_list->tpd_start);
+
+  for (int i = 0; i < new_tpd_list->num_tables; ++i) {
+
+    int cur_table_file_size = 0;
+    fread(&cur_table_file_size, sizeof(int), 1, backup_handle);
+    fseek(backup_handle, -sizeof(int), SEEK_CUR);
+
+    std::string cur_file_name = std::string(curr_tpd->table_name) + ".tab";
+    cur_table_handle = fopen(cur_file_name.c_str(), "w+");
+
+    char *cur_tab_data = (char *) calloc(1, (size_t) cur_table_file_size);
+    fread(cur_tab_data, (size_t) cur_table_file_size, 1, backup_handle);
+    fwrite(cur_tab_data, (size_t) cur_table_file_size, 1, cur_table_handle);
+    fflush(cur_table_handle);
+    fclose(cur_table_handle);
+
+    free(cur_tab_data);
+
+    curr_tpd = (tpd_entry *) ((char *) curr_tpd + curr_tpd->tpd_size);
+  }
+
+  std::ifstream t("db.log");
+  std::stringstream buffer;
+  buffer << t.rdbuf();
+  std::string log_str = buffer.str();
+
+  std::string log_str_upper = log_str;
+  std::transform(log_str_upper.begin(), log_str_upper.end(), log_str_upper.begin(), ::toupper);
+
+  std::string backup_str = "BACKUP TO " + backup_filename + " \"";
+  std::transform(backup_str.begin(), backup_str.end(), backup_str.begin(), ::toupper);
+
+  int backup_str_pos = (int) log_str_upper.find(backup_str);
+
+  std::string new_log_content = log_str.substr(0, backup_str_pos + backup_str.length());
+  new_log_content += "\n";
+
+  if (should_rf) {
+    new_log_content += "RF_START";
+    new_log_content += log_str.substr(backup_str_pos + backup_str.length());
+  } else {
+
+    int log_backup_number = 1;
+
+    std::string backup_log_name = "db.log" + std::to_string(log_backup_number);
+
+    while (access(backup_log_name.c_str(), F_OK) != -1) {
+      backup_log_name = "db.log" + std::to_string(++log_backup_number);
+    }
+
+    std::ifstream if_dbfile("db.log", std::ios_base::in);
+    std::ofstream of_backup(backup_log_name, std::ios_base::out);
+    of_backup << if_dbfile.rdbuf();
+  }
+
+  remove("db.log");
+
+  std::ofstream out_stream;
+  out_stream.open("db.log", std::ios_base::app);
+  out_stream << new_log_content;
+  out_stream.close();
+
+  fclose(backup_handle);
+  free(dbfile_data);
+  return 0;
+}
+
 int sem_rollforward(token_list *cur_token) {
 
   bool to_end = true;
@@ -1110,108 +1224,6 @@ int add_to_log_end(token_list *first_token) {
   out_stream.close();
 
   return rc;
-}
-
-int sem_restore(token_list *cur_token) {
-
-  std::string backup_filename = cur_token->tok_string;
-  cur_token = cur_token->next;
-
-  bool should_rf = !(cur_token->tok_class != terminator
-                     && cur_token->tok_value == K_WITHOUT
-                     && cur_token->next->tok_class != terminator
-                     && cur_token->next->tok_value == K_RF);
-
-  std::ifstream infile(backup_filename);
-  if (!infile.good()) {
-    printf("Error: backup file not found\n");
-    return -1;
-  }
-
-  tpd_entry *curr_tpd = &(g_tpd_list->tpd_start);
-  for (int i = 0; i < g_tpd_list->num_tables; ++i, ++curr_tpd) {
-    std::string tab_file_name = std::string(curr_tpd->table_name) + ".tab";
-    remove(tab_file_name.c_str());
-  }
-
-  remove("dbfile.bin");
-
-  FILE *dbfile_handle = nullptr;
-  FILE *backup_handle = nullptr;
-  FILE *cur_table_handle = nullptr;
-
-  // create dfbile.bin
-  dbfile_handle = fopen("dbfile.bin", "w+");
-  backup_handle = fopen(backup_filename.c_str(), "r");
-
-  int dbfile_size = 0;
-  fread(&dbfile_size, sizeof(int), 1, backup_handle);
-  rewind(backup_handle);
-
-  char *dbfile_data = (char *) calloc(1, (size_t) dbfile_size);
-  fread(dbfile_data, (size_t) dbfile_size, 1, backup_handle);
-  tpd_list *new_tpd_list = (tpd_list *) dbfile_data;
-  new_tpd_list->db_flags = should_rf ? 1 : 0;
-  fwrite(dbfile_data, (size_t) dbfile_size, 1, dbfile_handle);
-  fflush(dbfile_handle);
-  fclose(dbfile_handle);
-  dbfile_handle = fopen("dbfile.bin", "r");
-
-  fread(new_tpd_list, 1, sizeof(tpd_list), dbfile_handle);
-  curr_tpd = &(new_tpd_list->tpd_start);
-
-  for (int i = 0; i < new_tpd_list->num_tables; ++i) {
-
-    int cur_table_file_size = 0;
-    fread(&cur_table_file_size, sizeof(int), 1, backup_handle);
-    fseek(backup_handle, -sizeof(int), SEEK_CUR);
-
-    std::string cur_file_name = std::string(curr_tpd->table_name) + ".tab";
-    cur_table_handle = fopen(cur_file_name.c_str(), "w+");
-
-    char *cur_tab_data = (char *) calloc(1, (size_t) cur_table_file_size);
-    fread(cur_tab_data, (size_t) cur_table_file_size, 1, backup_handle);
-    fwrite(cur_tab_data, (size_t) cur_table_file_size, 1, cur_table_handle);
-    fflush(cur_table_handle);
-    fclose(cur_table_handle);
-
-    free(cur_tab_data);
-
-    curr_tpd = (tpd_entry *) ((char *) curr_tpd + curr_tpd->tpd_size);
-  }
-
-  std::ifstream t("db.log");
-  std::stringstream buffer;
-  buffer << t.rdbuf();
-
-  std::string log_str = buffer.str();
-
-  std::string log_str_upper = log_str;
-  std::transform(log_str_upper.begin(), log_str_upper.end(), log_str_upper.begin(), ::toupper);
-
-  std::string backup_str = "BACKUP TO " + backup_filename + " \"";
-  std::transform(backup_str.begin(), backup_str.end(), backup_str.begin(), ::toupper);
-
-  int backup_str_pos = (int) log_str_upper.find(backup_str);
-
-  std::string new_log_content = log_str.substr(0, backup_str_pos + backup_str.length());
-  new_log_content += "\n";
-
-  if (should_rf) {
-    new_log_content += "RF_START";
-    new_log_content += log_str.substr(backup_str_pos + backup_str.length());
-  }
-
-  remove("db.log");
-
-  std::ofstream out_stream;
-  out_stream.open("db.log", std::ios_base::app);
-  out_stream << new_log_content;
-  out_stream.close();
-
-  fclose(backup_handle);
-  free(dbfile_data);
-  return 0;
 }
 
 std::string get_timestamp() {
