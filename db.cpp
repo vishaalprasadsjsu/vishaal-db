@@ -20,6 +20,7 @@
 #include <fstream>
 #include <dirent.h>
 #include <sstream>
+#include <map>
 
 using namespace std::placeholders;
 
@@ -1107,7 +1108,7 @@ int sem_rollforward(token_list *cur_token) {
     // run the SQL query
     token_list *cur_statement = nullptr;
     char *command = (char *) calloc(cur_command_str.length(), sizeof(char));
-    memccpy(command, cur_command_str.c_str(), 1, cur_command_str.length());
+    memcpy(command, cur_command_str.c_str(), cur_command_str.length());
     get_token(command, &cur_statement);
     do_semantic(cur_statement);
     free(command);
@@ -1537,10 +1538,19 @@ int sem_select(token_list *t_list) {
   if (cur_token->tok_value == F_SUM || cur_token->tok_value == F_COUNT
       || cur_token->tok_value == F_AVG) {
 
-    return sem_select_agg(cur_token);
+    return sem_select_agg(cur_token, nullptr);
   }
 
   token_list *first_col_token = cur_token;
+
+  // check GROUP BY
+  for (; cur_token->next != nullptr; cur_token = cur_token->next) {
+    if (cur_token->tok_value == K_GROUP) {
+      return sem_select_agg(first_col_token, cur_token);
+    }
+  }
+
+  cur_token = first_col_token;
 
   int cols_print_count = 0;
   token_list *table_name_token = nullptr;
@@ -1711,7 +1721,7 @@ int sem_select(token_list *t_list) {
   char *first_record = (char *) (file_header + 1);
   char *curr_record = first_record;
 
-  std::vector<char *> record_heads; // push_back(char *) to add values
+  std::vector<char *> record_heads;
 
   for (int i = 0; i < file_header->num_records; ++i, curr_record += file_header->record_size) {
 
@@ -1816,9 +1826,38 @@ int sem_select(token_list *t_list) {
   return 0;
 }
 
-int sem_select_agg(token_list *t_list) {
+int sem_select_agg(token_list *t_list, token_list *group_token) {
 
   int rc = 0;
+
+  if (group_token != nullptr) {
+    if (group_token->next->tok_value != K_BY) {
+      printf("Expected keyword BY after GROUP\n");
+      return INVALID_STATEMENT;
+    }
+
+    group_token = group_token->next->next;
+
+    if (strcmp(t_list->tok_string, group_token->tok_string)) {
+      printf("Check GROUP BY syntax, column name should appear twice\n");
+      return INVALID_STATEMENT;
+    }
+
+    t_list = t_list->next;
+
+    if (t_list->tok_value != S_COMMA) {
+      printf("Expected COMMA after column name\n");
+      return INVALID_STATEMENT;
+    }
+
+    t_list = t_list->next;
+
+    if (t_list->tok_value != F_SUM
+        && t_list->tok_value != F_AVG
+        && t_list->tok_value != F_COUNT) {
+      printf("GROUP BY must be used with aggregate\n");
+    }
+  }
 
   token_list *cur_token = t_list;
   token_list *agg_token = cur_token;
@@ -1902,10 +1941,9 @@ int sem_select_agg(token_list *t_list) {
       cur_token = second_comp_val_token->next;
     }
 
-  } else if (cur_token->tok_class != terminator && cur_token->tok_value != K_ORDER) {
+  } else if (cur_token->tok_class != terminator && cur_token->tok_value != K_GROUP) {
     return INVALID_STATEMENT;
   }
-
 
   if ((agg_token->tok_value == F_AVG || agg_token->tok_value == F_SUM)
       && (sel_col_cd->col_type == T_CHAR)) {
@@ -1919,16 +1957,38 @@ int sem_select_agg(token_list *t_list) {
   table_file_header *file_header = get_file_header(table_name_token->tok_string);
 
   char *record_head = ((char *) file_header) + file_header->record_offset;
-  char *curr_field = ((char *) file_header) + file_header->record_offset;
+  char *curr_field = record_head;
+  char *curr_group_field = record_head;
 
   cd_entry *cd_iter = (cd_entry *) (((char *) curr_table_tpd) + curr_table_tpd->cd_offset);
   while (cd_iter != sel_col_cd && (sel_col_cd != nullptr)) curr_field += (cd_iter++)->col_len + 1;
 
+  cd_entry *group_cd = nullptr;
+
+  if (group_token != nullptr) {
+    group_cd = get_cd(table_name_token->tok_string, group_token->tok_string);
+
+    if (group_cd == nullptr) {
+      printf("Could not find that GROUP BY column\n");
+      return INVALID_STATEMENT;
+    }
+
+    cd_iter = (cd_entry *) (((char *) curr_table_tpd) + curr_table_tpd->cd_offset);
+    while (cd_iter != group_cd && (group_cd != nullptr)) {
+      curr_group_field += (cd_iter++)->col_len + 1;
+    }
+  }
+
   long sum = 0;
   int count = 0;
 
-  for (int i = 0; i < file_header->num_records; ++i,
-      curr_field += file_header->record_size, record_head += file_header->record_size) {
+  std::map<std::string, int> group_by_sum_map;
+  std::map<std::string, int> group_by_count_map;
+
+  int null_group_sum = 0;
+  int null_group_count = 0;
+
+  for (int i = 0; i < file_header->num_records; ++i) {
 
     bool is_cond_satisfied = false;
 
@@ -1959,6 +2019,7 @@ int sem_select_agg(token_list *t_list) {
 
     } else if (comp_cond_token->tok_value == K_OR) {
 
+      // where cond1 OR cond2
       if (satisfies_condition(record_head + first_comp_field_offset, first_comp_type,
                               first_comp_val_token, first_comp_cd->col_len)
           || satisfies_condition(record_head + second_comp_field_offset, second_comp_type,
@@ -1970,43 +2031,186 @@ int sem_select_agg(token_list *t_list) {
     }
 
     if (is_cond_satisfied) {
-      if (sel_col_token->tok_value == S_STAR) {
-        count++;
+
+      if (group_cd == nullptr) {
+
+        if (sel_col_token->tok_value == S_STAR) {
+            count++;
+        } else {
+
+          if (((int) curr_field[0]) != 0) count++;
+
+          if (sel_col_cd->col_type == T_INT) {
+            int *data = (int *) calloc(1, sizeof(int));
+            memcpy(data, &(curr_field + 1)[0], sizeof(int));
+            sum += *data;
+            free(data);
+          }
+        }
 
       } else {
 
-        if (((int) curr_field[0]) != 0) count++;
+        bool is_group_val_null = (((int) curr_group_field[0]) == 0);
+        char *curr_group_by_val = (char *) calloc(1, (size_t) group_cd->col_len);
+        memcpy(curr_group_by_val, curr_group_field + 1, (size_t) group_cd->col_len);
+        std::string curr_group_by_val_str = std::string(curr_group_by_val);
 
-        if (sel_col_cd->col_type == T_INT) {
-          int *data = (int *) calloc(1, sizeof(int));
-          memcpy(data, &(curr_field + 1)[0], sizeof(int));
-          sum += *data;
-          free(data);
+        if (sel_col_token->tok_value == S_STAR) {
+
+          if (is_group_val_null) {
+            null_group_count++;
+
+          } else {
+
+            if (group_by_count_map.find(curr_group_by_val_str) != group_by_count_map.end()) {
+              group_by_count_map.at(curr_group_by_val_str)++;
+            } else {
+              group_by_count_map.insert(std::make_pair(curr_group_by_val_str, 1));
+            }
+
+          }
+
+        } else {
+          // agg is sum or avg
+
+          // update count if not null field
+          if (((int) curr_field[0]) != 0) {
+            if (is_group_val_null) {
+              null_group_count++;
+            } else {
+              if (group_by_count_map.find(curr_group_by_val_str) != group_by_count_map.end()) {
+                group_by_count_map.at(curr_group_by_val_str)++;
+              } else {
+                group_by_count_map.insert(std::make_pair(curr_group_by_val_str, 1));
+              }
+            }
+          }
+
+          // if INT, then update sum
+          if (sel_col_cd->col_type == T_INT) {
+            int *data = (int *) calloc(1, sizeof(int));
+            memcpy(data, &(curr_field + 1)[0], sizeof(int));
+
+            if (is_group_val_null) {
+              null_group_sum += *data;
+            } else {
+              if (group_by_sum_map.find(curr_group_by_val_str) != group_by_sum_map.end()) {
+                group_by_sum_map.at(curr_group_by_val_str) += *data;
+              } else {
+                group_by_sum_map.insert(std::make_pair(curr_group_by_val_str, *data));
+              }
+
+            }
+
+            free(data);
+          }
+
         }
+
+        free(curr_group_by_val);
+
       }
     }
+
+    curr_field += file_header->record_size;
+    record_head += file_header->record_size;
+    curr_group_field += file_header->record_size;
   }
 
-  float avg = ((float) sum) / count;
 
-  std::string result_str;
+  if (group_cd != nullptr) {
 
-  if (agg_token->tok_value == F_SUM) result_str = std::to_string(sum);
-  else if (agg_token->tok_value == F_AVG) result_str = std::to_string(avg);
-  else result_str = std::to_string(count);
+    int result_print_width = 16;
 
-  std::string title_str = std::string(agg_token->tok_string);
-  title_str.append("(");
-  title_str.append(sel_col_token->tok_string);
-  title_str.append(")");
+    auto count_iter = group_by_count_map.begin();
+    auto sum_iter = group_by_sum_map.begin();
+    std::vector<std::string> averages;
 
-  int print_width = (int) fmax(result_str.length(), title_str.length());
+    if (null_group_sum != 0) {
+      averages.push_back(std::to_string(((float) null_group_sum) / null_group_count));
+    }
 
-  printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
-  printf("|%-*s|\n", print_width, title_str.c_str());
-  printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
-  printf("|%+*s|\n", print_width, result_str.c_str());
-  printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
+    if (agg_token->tok_value != F_COUNT) {
+
+      while (count_iter != group_by_count_map.end()) {
+        if (agg_token->tok_value == F_AVG) {
+          averages.push_back(std::to_string(((float) sum_iter->second) / count_iter->second));
+          result_print_width = (int) fmax(result_print_width,
+                                          averages[averages.size() - 1].length());
+        } else {
+          result_print_width = (int) fmax(result_print_width,
+                                          std::to_string(sum_iter->second).length());
+        }
+
+        ++count_iter;
+        if (agg_token->tok_value != F_SUM) ++sum_iter;
+
+      }
+      count_iter = group_by_count_map.begin();
+      sum_iter = group_by_sum_map.begin();
+    }
+
+    std::string group_agg_title =
+        std::string(agg_token->tok_string) + "(" + std::string(sel_col_token->tok_string) + ")";
+
+    printf("+%s+%s+\n", std::string(16, '-').c_str(), std::string(result_print_width, '-').c_str());
+    printf("|%-*s|%-*s|\n", 16, group_cd->col_name, result_print_width, group_agg_title.c_str());
+    printf("+%s+%s+\n", std::string(16, '-').c_str(), std::string(result_print_width, '-').c_str());
+
+    if (null_group_count != 0) {
+      if (group_cd->col_type == T_INT) printf("|            NULL|");
+      else printf("|NULL            |");
+
+      if (agg_token->tok_value == F_AVG) {
+        printf("%+*s|\n", result_print_width, averages[0].c_str());
+      } else if (agg_token->tok_value == F_SUM) {
+        printf("%+*s|\n", result_print_width, std::to_string(null_group_sum).c_str());
+      } else {
+        printf("%+*s|\n", result_print_width, std::to_string(null_group_count).c_str());
+      }
+    }
+
+    for (int i = !!null_group_count; count_iter != group_by_count_map.end(); ++i) {
+
+      if (group_cd->col_type == T_INT) printf("|%+*s|", 16, count_iter->first.c_str());
+      else printf("|%-*s|", 16, count_iter->first.c_str());
+
+      if (agg_token->tok_value == F_AVG) {
+        printf("%+*s|\n", result_print_width, averages[i].c_str());
+      } else if (agg_token->tok_value == F_SUM) {
+        printf("%+*s|\n", result_print_width, std::to_string(sum_iter->second).c_str());
+      } else {
+        printf("%+*s|\n", result_print_width, std::to_string(count_iter->second).c_str());
+      }
+
+      ++count_iter;
+      if (agg_token->tok_value == F_SUM) ++sum_iter;
+    }
+    printf("+%s+%s+\n", std::string(16, '-').c_str(), std::string(result_print_width, '-').c_str());
+
+  } else {
+
+    float avg = ((float) sum) / count;
+
+    std::string result_str;
+
+    if (agg_token->tok_value == F_SUM) result_str = std::to_string(sum);
+    else if (agg_token->tok_value == F_AVG) result_str = std::to_string(avg);
+    else result_str = std::to_string(count);
+
+    std::string title_str = std::string(agg_token->tok_string);
+    title_str.append("(");
+    title_str.append(sel_col_token->tok_string);
+    title_str.append(")");
+
+    int print_width = (int) fmax(result_str.length(), title_str.length());
+
+    printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
+    printf("|%-*s|\n", print_width, title_str.c_str());
+    printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
+    printf("|%+*s|\n", print_width, result_str.c_str());
+    printf("+%s+\n", std::string((unsigned long) print_width, '-').c_str());
+  }
 
   free(file_header);
   return rc;
@@ -2021,7 +2225,7 @@ int sem_update_value(token_list *cur_token) {
     return TABLE_NOT_EXIST;
   }
 
-  cur_token = cur_token->next->next; // do_semantic already checked for "SET"
+  cur_token = cur_token->next->next;
 
   char *set_col_name = cur_token->tok_string;
 
@@ -2031,7 +2235,7 @@ int sem_update_value(token_list *cur_token) {
   cur_token = cur_token->next;
 
   if (cur_token->tok_value != S_EQUAL || cur_token->next == nullptr) {
-    return INVALID_STATEMENT; // todo :: invalid insert statement
+    return INVALID_STATEMENT;
   }
 
   cur_token = cur_token->next;
@@ -2295,7 +2499,7 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
       && (((*compare_cd)->col_type == T_INT && (*comp_value_token)->tok_value != INT_LITERAL)
       || ((*compare_cd)->col_type == T_CHAR && (*comp_value_token)->tok_value != STRING_LITERAL))) {
 
-    return INVALID_STATEMENT; // todo :: invalid compare value type
+    return INVALID_STATEMENT;
   }
 
   *comp_field_offset = 1;

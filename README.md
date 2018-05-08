@@ -46,5 +46,6 @@ $ ./db "CREATE TABLE class (student char(12) NOT NULL, gender char(1), exams int
   * `DELETE` 
   * `SELECT *` or `SELECT <col>, <col>, ...`
   * `SELECT <aggregate>` (i.e. `SUM`, `AVG` and `COUNT`)
+  * `SELECT <col>, <aggregate>(<col2>) ... GROUP BY <col>`
   * `... ORDER BY`
   * `... WHERE`

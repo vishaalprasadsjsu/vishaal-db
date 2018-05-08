@@ -63,8 +63,8 @@ typedef struct table_file_header_def {
   int num_records;      // 4 bytes
   int record_offset;    // 4 bytes
   int file_header_flag; // 4 bytes
-  tpd_entry *tpd_ptr;         // 4 bytes [?]
-} table_file_header;           // minimum size = 24
+  tpd_entry *tpd_ptr;   // 4 bytes
+} table_file_header;    // minimum size = 24
 
 /* This enum defines the different classes of tokens for 
    semantic processing. */
@@ -105,6 +105,7 @@ typedef enum t_value {
   K_SET,
   K_SELECT,
   K_ORDER,
+  K_GROUP,
   K_BY,
   K_DESC,
   K_IS,
@@ -136,15 +137,15 @@ typedef enum t_value {
 } token_value;
 
 /* This constants must be updated when add new keywords */
-#define TOTAL_KEYWORDS_PLUS_TYPE_NAMES 35
+#define TOTAL_KEYWORDS_PLUS_TYPE_NAMES 36
 
 /* New keyword must be added in the same position/order as the enum
    definition above, otherwise the lookup will be wrong */
 char *keyword_table[] =
     {"int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema", "for",
      "to", "insert", "into", "values", "delete", "from", "where", "update", "set", "select",
-     "order", "by", "desc", "is", "and", "or", "backup", "restore", "rollforward", "rf", "without",
-     "sum", "avg", "count"};
+     "order", "group", "by", "desc", "is", "and", "or", "backup", "restore", "rollforward", "rf",
+     "without", "sum", "avg", "count"};
 
 /* This enum defines a set of possible statements */
 typedef enum s_statement {
@@ -196,7 +197,7 @@ int sem_drop_table(token_list *t_list);
 int sem_list_tables();
 int sem_list_schema(token_list *t_list);
 int sem_select(token_list *cur_token);
-int sem_select_agg(token_list *t_list);
+int sem_select_agg(token_list *t_list, token_list *group_token);
 int sem_insert_value(token_list *cur_token);
 int sem_update_value(token_list *cur_token);
 int sem_delete_value(token_list *cur_token);
