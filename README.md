@@ -2,7 +2,7 @@ CS 157B Database Project
 ========================
 A basic relational database capable of processing basic SQL statements. 
 
-``` 
+```
 $ ./db "select * from class" 
 dbfile.bin size = 228
 SELECT statement
@@ -39,7 +39,7 @@ $ ./db "CREATE TABLE class (student char(12) NOT NULL, gender char(1), exams int
 ``` 
 
 ### Supported Features 
-* Only supports positive `int` and `char` types
+* Only supports `char` and positive `int` types
 * Supports the following SQL statement types: 
   * `INSERT`
   * `UPDATE` 
@@ -49,3 +49,10 @@ $ ./db "CREATE TABLE class (student char(12) NOT NULL, gender char(1), exams int
   * `SELECT <col>, <aggregate>(<col2>) ... GROUP BY <col>`
   * `... ORDER BY`
   * `... WHERE`
+* Backup/Restore functionality: 
+  * `BACKUP TO <name>` 
+  * `RESTORE FROM <name>`, `RESTORE FROM <name> WITHOUT RF` 
+  * `ROLLFORWARD` or `ROLLFORWARD TO <time>` where time is a 14-digit timestamp 
+
+All DDL and DML statements (except `SELECT`) are logged in db.log. 
+Log backups from backup/restore functionality are stored in db.log# with incrementing numbers. 
