@@ -2,7 +2,7 @@ CS 157B Database Project
 ========================
 A basic relational database capable of processing basic SQL statements. 
 
-```bash 
+``` 
 $ ./db "select * from class" 
 dbfile.bin size = 228
 SELECT statement
