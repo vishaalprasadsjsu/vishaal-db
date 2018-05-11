@@ -17,15 +17,17 @@ db.h - This file contains all the structures, defines, and function
 /* Column descriptor structure = 20+4+4+4+4 = 36 bytes */
 typedef struct cd_entry_def {
   char col_name[MAX_IDENT_LEN + 4];
-  int col_id;                   /* Start from 0 */
+  int col_id;   /* Start from 0 */
   int col_type;
   int col_len;
   int not_null;
 } cd_entry;
 
-/* Table packed descriptor structure = 4+20+4+4+4 = 36 bytes
-   Minimum of 1 column in a table - therefore minimum size of
-   1 valid tpd_entry is 36+36 = 72 bytes. */
+/*
+ * Table packed descriptor structure = 4+20+4+4+4 = 36 bytes
+ * Minimum of 1 column in a table - therefore minimum size of
+ * 1 valid tpd_entry is 36+36 = 72 bytes.
+ */
 typedef struct tpd_entry_def {
   int tpd_size;
   char table_name[MAX_IDENT_LEN + 4];
@@ -34,10 +36,12 @@ typedef struct tpd_entry_def {
   int tpd_flags;
 } tpd_entry;
 
-/* Table packed descriptor list = 4+4+4+36 = 48 bytes.  When no
-   table is defined the tpd_list is 48 bytes.  When there is 
-   at least 1 table, then the tpd_entry (36 bytes) will be
-   overlapped by the first valid tpd_entry. */
+/*
+ * Table packed descriptor list = 4+4+4+36 = 48 bytes.  When no
+ * table is defined the tpd_list is 48 bytes.  When there is
+ * at least 1 table, then the tpd_entry (36 bytes) will be
+ * overlapped by the first valid tpd_entry.
+ */
 typedef struct tpd_list_def {
   int list_size;
   int num_tables;
@@ -45,10 +49,12 @@ typedef struct tpd_list_def {
   tpd_entry tpd_start;
 } tpd_list;
 
-/* This token_list definition is used for breaking the command
-   string into separate tokens in function get_tokens().  For
-   each token, a new token_list will be allocated and linked 
-   together. */
+/*
+ * This token_list definition is used for breaking the command
+ * string into separate tokens in function get_tokens().  For
+ * each token, a new token_list will be allocated and linked
+ * together.
+ */
 typedef struct t_list {
   char tok_string[MAX_TOK_LEN];
   int tok_class;
@@ -66,8 +72,23 @@ typedef struct table_file_header_def {
   tpd_entry *tpd_ptr;   // 4 bytes
 } table_file_header;    // minimum size = 24
 
-/* This enum defines the different classes of tokens for 
-   semantic processing. */
+/* Used with double joins */
+typedef struct record_pair_def {
+  char *tab_a_rec;
+  char *tab_b_rec;
+} record_pair;
+
+/* Used with triple joins */
+typedef struct record_triplet_def {
+  char *tab_a_rec;
+  char *tab_b_rec;
+  char *tab_c_rec;
+} record_triplet;
+
+/*
+ * This enum defines the different classes of tokens for
+ * semantic processing.
+ */
 typedef enum t_class {
   keyword = 1,
   identifier,
@@ -79,8 +100,10 @@ typedef enum t_class {
   error
 } token_class;
 
-/* This enum defines the different values associated with
-   a single valid token.  Use for semantic processing. */
+/*
+ * This enum defines the different values associated with
+ * a single valid token.  Use for semantic processing.
+ */
 typedef enum t_value {
   // new type should be added above this line
   T_INT = 10,
@@ -119,7 +142,7 @@ typedef enum t_value {
   F_SUM,
   F_AVG,
   F_COUNT,
-  // new function name should be added below this line
+  /* new function name should be added below this line */
 
   S_LEFT_PAREN = 70,
   S_RIGHT_PAREN,
@@ -139,8 +162,10 @@ typedef enum t_value {
 /* This constants must be updated when add new keywords */
 #define TOTAL_KEYWORDS_PLUS_TYPE_NAMES 36
 
-/* New keyword must be added in the same position/order as the enum
-   definition above, otherwise the lookup will be wrong */
+/*
+ * New keyword must be added in the same position/order as the enum
+ * definition above, otherwise the lookup will be wrong
+ */
 char *keyword_table[] =
     {"int", "char", "varchar", "create", "table", "not", "null", "drop", "list", "schema", "for",
      "to", "insert", "into", "values", "delete", "from", "where", "update", "set", "select",
@@ -164,8 +189,10 @@ typedef enum s_statement {
   ROLLFORWARD
 } semantic_statement;
 
-/* This enum has a list of all the errors that should be detected
-   by the program.  Can append to this if necessary. */
+/*
+ * This enum has a list of all the errors that should be detected
+ * by the program.  Can append to this if necessary.
+ */
 typedef enum error_return_codes {
   INVALID_TABLE_NAME = -399,
   DUPLICATE_TABLE_NAME,
@@ -181,8 +208,7 @@ typedef enum error_return_codes {
   INVALID_REPORT_FILE_NAME,
   INVALID_INSERT_STATEMENT,
 
-  // add all the possible errors from I/U/D + SELECT here */
-
+  /* add all the possible errors from I/U/D + SELECT here */
   FILE_OPEN_ERROR = -299,
   DBFILE_CORRUPTION,
   MEMORY_ERROR
@@ -198,6 +224,7 @@ int sem_list_tables();
 int sem_list_schema(token_list *t_list);
 int sem_select(token_list *cur_token);
 int sem_select_agg(token_list *t_list, token_list *group_token);
+int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *first_tab_token);
 int sem_insert_value(token_list *cur_token);
 int sem_update_value(token_list *cur_token);
 int sem_delete_value(token_list *cur_token);
@@ -206,9 +233,9 @@ int sem_restore(token_list *cur_token);
 int sem_rollforward(token_list *cur_token);
 
 /*
-  Keep a global list of tpd - in real life, this will be stored
-  in shared memory.  Build a set of functions/methods around this.
-*/
+ * Keep a global list of tpd - in real life, this will be stored
+ * in shared memory.  Build a set of functions/methods around this.
+ */
 tpd_list *g_tpd_list;
 bool is_rollforwarding = false;
 
@@ -225,10 +252,16 @@ int get_print_size(cd_entry *cd);
 int delete_tab_file(char *tab_name);
 bool satisfies_condition(char *field, int operator_type, token_list *comp_value_token, int col_len);
 cd_entry *get_cd(char *table_name, char *col_name);
-int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, int *comp_type,
-                     token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset);
+int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, bool is_join,
+                     int *r_comp_type, token_list **r_comp_value_token, cd_entry **r_compare_cd,
+                     int *r_comp_field_offset);
 bool compare_records_by_val(const char *record_a, const char *record_b,
                             cd_entry *order_cd, int field_offset, bool desc);
 int add_to_log_end(token_list *first_token);
 std::string get_timestamp();
 bool is_timestamp_before(std::string first, std::string second);
+bool cmp_rec_pair(record_pair *rec_pair_a, record_pair *rec_pair_b, cd_entry *order_cd, bool which,
+                  int field_offset, bool desc);
+bool cmp_rec_triplet(record_triplet *trip_a, record_triplet *trip_b, cd_entry *order_cd, int which,
+                     int field_offset, bool desc);
+void *tri_switch(int swtch, void *ret_zero, void *ret_one, void *ret_two);

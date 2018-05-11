@@ -1587,6 +1587,10 @@ int sem_select(token_list *t_list) {
   // cur_token points to FROM
   token_list *from_token = cur_token;
 
+  if (table_name_token->next->tok_value == S_COMMA) {
+    return sem_select_join(cols_print_count, first_col_token, table_name_token);
+  }
+
   tpd_entry *tpd = get_tpd_from_list(table_name_token->tok_string);
 
   if (tpd == nullptr) {
@@ -1604,7 +1608,8 @@ int sem_select(token_list *t_list) {
     cur_token = first_col_token;
   }
 
-  int* cols_to_print = (int *) calloc((size_t) cols_print_count, sizeof(int)); // indices of which cols to print
+  // indices of which cols to print
+  int* cols_to_print = (int *) calloc((size_t) cols_print_count, sizeof(int));
 
   // populate cols_to_print
   for (int i = 0; i < cols_print_count; ++i) {
@@ -1671,8 +1676,9 @@ int sem_select(token_list *t_list) {
   if (cur_token->tok_value == K_WHERE) {
 
     where_token = cur_token;
-    rc = get_compare_vals(where_token, table_name_token->tok_string, first_cd, &first_comp_type,
-                          &first_comp_val_token, &first_comp_cd, &first_comp_field_offset);
+    rc = get_compare_vals(where_token, table_name_token->tok_string, first_cd, false,
+                          &first_comp_type, &first_comp_val_token, &first_comp_cd,
+                          &first_comp_field_offset);
 
     if (rc) return rc;
 
@@ -1681,8 +1687,9 @@ int sem_select(token_list *t_list) {
     if (cur_token->tok_value == K_AND || cur_token->tok_value == K_OR) {
       comp_cond_token = cur_token;
 
-      rc = get_compare_vals(comp_cond_token, table_name_token->tok_string, first_cd, &second_comp_type,
-                            &second_comp_val_token, &second_comp_cd, &second_comp_field_offset);
+      rc = get_compare_vals(comp_cond_token, table_name_token->tok_string, first_cd, false,
+                            &second_comp_type, &second_comp_val_token, &second_comp_cd,
+                            &second_comp_field_offset);
 
       if (rc) return rc;
 
@@ -1923,8 +1930,9 @@ int sem_select_agg(token_list *t_list, token_list *group_token) {
 
   if (cur_token->tok_value == K_WHERE) {
     where_token = cur_token;
-    rc = get_compare_vals(where_token, table_name_token->tok_string, first_cd, &first_comp_type,
-                          &first_comp_val_token, &first_comp_cd, &first_comp_field_offset);
+    rc = get_compare_vals(where_token, table_name_token->tok_string, first_cd, false,
+                          &first_comp_type, &first_comp_val_token, &first_comp_cd,
+                          &first_comp_field_offset);
 
     if (rc) return rc;
 
@@ -1933,8 +1941,9 @@ int sem_select_agg(token_list *t_list, token_list *group_token) {
     if (cur_token->tok_value == K_AND || cur_token->tok_value == K_OR) {
       comp_cond_token = cur_token;
 
-      rc = get_compare_vals(comp_cond_token, table_name_token->tok_string, first_cd, &second_comp_type,
-                            &second_comp_val_token, &second_comp_cd, &second_comp_field_offset);
+      rc = get_compare_vals(comp_cond_token, table_name_token->tok_string, first_cd, false,
+                            &second_comp_type, &second_comp_val_token, &second_comp_cd,
+                            &second_comp_field_offset);
 
       if (rc) return rc;
 
@@ -2216,6 +2225,669 @@ int sem_select_agg(token_list *t_list, token_list *group_token) {
   return rc;
 }
 
+int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *first_tab_token) {
+  int rc = 0;
+
+  std::vector<cd_entry> cols_to_print;
+  std::vector<int> cols_to_print_which_tab; // table to which the columns belong 0, 1 or 2
+
+  token_list *second_tab_tok = nullptr;
+  token_list *third_tab_tok = nullptr;
+
+  /** get all table data involved in join **/
+
+  table_file_header *first_header = get_file_header(first_tab_token->tok_string);
+  table_file_header *second_header = nullptr;
+  table_file_header *third_header = nullptr;
+
+  tpd_entry *first_table_tpd = nullptr;
+  tpd_entry *second_table_tpd = nullptr;
+  tpd_entry *third_table_tpd = nullptr;
+
+  cd_entry *first_table_first_cd = nullptr;
+  cd_entry *second_table_first_cd = nullptr;
+  cd_entry *third_table_first_cd = nullptr;
+
+  if (first_header == nullptr) {
+    printf("ERROR: unable to find table [%s]\n", first_tab_token->tok_string);
+    return INVALID_TABLE_NAME;
+  } else {
+    first_table_tpd = get_tpd_from_list(first_tab_token->tok_string);
+    first_table_first_cd = (cd_entry *) (((char *) first_table_tpd) + first_table_tpd->cd_offset);
+  }
+
+  token_list *cur_tok = first_tab_token->next->next;
+  second_tab_tok = cur_tok;
+  second_header = get_file_header(second_tab_tok->tok_string);
+
+  if (second_header == nullptr) {
+    printf("ERROR: unable to find table [%s]\n", second_tab_tok->tok_string);
+    return INVALID_TABLE_NAME;
+  } else {
+    second_table_tpd = get_tpd_from_list(second_tab_tok->tok_string);
+    second_table_first_cd =
+        (cd_entry *) (((char *) second_table_tpd) + second_table_tpd->cd_offset);
+  }
+
+  // three-table join only
+  if (cur_tok->next->tok_value == S_COMMA) {
+    third_tab_tok = cur_tok->next->next;
+    third_header = get_file_header(third_tab_tok->tok_string);
+    if (third_header == nullptr) {
+      printf("ERROR: unable to find table [%s]\n", third_tab_tok->tok_string);
+      return INVALID_TABLE_NAME;
+    } else {
+      third_table_tpd = get_tpd_from_list(third_tab_tok->tok_string);
+      third_table_first_cd = (cd_entry *) (((char *) third_table_tpd) + third_table_tpd->cd_offset);
+    }
+    cur_tok = cur_tok->next->next;
+  }
+
+  cur_tok = cur_tok->next;
+  if (cur_tok->tok_value != K_WHERE) {
+    printf("ERROR: Expected WHERE clause for join\n");
+    return INVALID_STATEMENT;
+  }
+
+  /** how many joins, is there conditional **/
+
+  // Following two tokens point to K_WHERE and/or K_AND
+  token_list *join_cond_token = nullptr;
+  token_list *comp_cond_token = nullptr; // optional for double join, mandatory for triple join
+  token_list *order_by_tok = nullptr;
+
+  /*
+   * double joins only -- WHERE <cond> AND <join_predicate>
+   * join_cond_token AFTER comp_cond_token
+   */
+  bool second_pred_join = false;
+
+  if (cur_tok->next->next->next->tok_value != IDENT) {
+    // first conditional is not a join predicate
+
+    if (third_table_tpd != nullptr) {
+      printf("ERROR: Need join predicate for triple join\n");
+      return INVALID_STATEMENT;
+    }
+
+    second_pred_join = true;
+    comp_cond_token = cur_tok; // actually WHERE (they're switched, second_pred_join flags this)
+
+    join_cond_token = comp_cond_token->next->next->next->next;
+    if (join_cond_token->tok_value != K_AND) {
+      printf("ERROR: Expected second conditional for join predicate\n");
+      return INVALID_STATEMENT;
+    }
+
+    if (join_cond_token->next->next->next->tok_value != IDENT) {
+      printf("ERROR: Expected column name for join clause\n");
+      return INVALID_STATEMENT;
+    }
+
+  } else {
+    // normal case, double and triple joins
+    // i.e. join conditional comes first
+
+    join_cond_token = cur_tok; // WHERE, comparator value is string (already checked)
+    comp_cond_token = cur_tok->next->next->next->next; // points to AND
+
+    if (comp_cond_token->tok_value == K_AND) {
+
+      if (third_table_tpd != nullptr) {
+        if (comp_cond_token->next->next->next->tok_value != IDENT) {
+          printf("ERROR: Expected column name for second join clause (triple join)\n");
+          return INVALID_STATEMENT;
+        }
+      } else {
+        if (comp_cond_token->next->next->next->tok_value == IDENT) {
+          printf("ERROR: Cannot use another join predicate with double join\n");
+          return INVALID_STATEMENT;
+        }
+      }
+
+    } else if (comp_cond_token->tok_value == K_ORDER) {
+
+      if (third_table_tpd != nullptr) {
+        printf("ERROR: Expected second join predicate for triple-join\n");
+        return INVALID_STATEMENT;
+      }
+
+      order_by_tok = comp_cond_token;
+      comp_cond_token = nullptr;
+
+    } else {
+      // no second conditional
+      comp_cond_token = nullptr;
+      if (third_table_tpd != nullptr) {
+        printf("ERROR: Expected another join predicate for triple join.\n");
+        return INVALID_STATEMENT;
+      }
+    }
+  }
+
+  /*
+   * join_cond_token    points to   K_WHERE or K_AND immediately before join predicate
+   * second_pred_join   true for    WHERE <cond> AND <join_pred>  (flags that they're switched)
+   * comp_cond_token    points to   K_AND for second join (triple join), or second conditional
+   */
+
+  /** set first join variables **/
+
+  // first join first table variables
+  token_list *first_join_first_col_token = join_cond_token->next;
+  int join_first_col_which_tab = -1;
+  char *first_join_first_table_name;
+
+  cd_entry *first_join_col_cd;
+  cd_entry *first_join_table_first_cd;
+
+  // find out which table col belongs to
+  if ((first_join_col_cd = get_cd(first_tab_token->tok_string, first_join_first_col_token->tok_string)) != nullptr) {
+    join_first_col_which_tab = 0;
+    first_join_first_table_name = first_tab_token->tok_string;
+    first_join_table_first_cd = first_table_first_cd;
+  } else if ((first_join_col_cd = get_cd(second_tab_tok->tok_string, first_join_first_col_token->tok_string)) != nullptr) {
+    join_first_col_which_tab = 1;
+    first_join_first_table_name = second_tab_tok->tok_string;
+    first_join_table_first_cd = second_table_first_cd;
+  } else if ((first_join_col_cd = get_cd(third_tab_tok->tok_string, first_join_first_col_token->tok_string)) != nullptr) {
+    join_first_col_which_tab = 2;
+    first_join_first_table_name = third_tab_tok->tok_string;
+    first_join_table_first_cd = third_table_first_cd;
+  } else {
+    printf("ERROR: Could not find column with name [%s]\n", first_join_first_col_token->tok_string);
+    return INVALID_STATEMENT;
+  }
+
+  int first_comp_type = 0;
+  token_list *first_join_second_col_tok = nullptr;
+  int first_join_first_col_field_offset = 0;
+
+  rc = get_compare_vals(join_cond_token, first_join_first_table_name, first_join_table_first_cd,
+                        true, &first_comp_type, &first_join_second_col_tok, &first_join_col_cd,
+                        &first_join_first_col_field_offset);
+  if (rc) return rc;
+
+  if (first_comp_type != S_EQUAL) {
+    printf("ERROR: must use equals for join\n");
+    return INVALID_STATEMENT;
+  }
+
+  cur_tok = first_join_second_col_tok;
+  cd_entry *first_join_sec_col_cd = nullptr;
+  int first_join_sec_col_which_tab = 0;
+  char *first_join_second_tab_name = nullptr;
+  cd_entry *first_join_sec_col_first_cd = nullptr;
+
+
+  // find which table first join's second table belongs to
+  if ((first_join_sec_col_cd = get_cd(first_tab_token->tok_string, first_join_second_col_tok->tok_string)) != nullptr) {
+    first_join_sec_col_which_tab = 0;
+    first_join_second_tab_name = first_tab_token->tok_string;
+    first_join_sec_col_first_cd = first_table_first_cd;
+  } else if ((first_join_sec_col_cd = get_cd(second_tab_tok->tok_string, first_join_second_col_tok->tok_string)) != nullptr) {
+    first_join_sec_col_which_tab = 1;
+    first_join_second_tab_name = second_tab_tok->tok_string;
+    first_join_sec_col_first_cd = second_table_first_cd;
+  } else if ((first_join_sec_col_cd = get_cd(third_tab_tok->tok_string, first_join_second_col_tok->tok_string)) != nullptr) {
+    first_join_sec_col_which_tab = 2;
+    first_join_second_tab_name = third_tab_tok->tok_string;
+    first_join_sec_col_first_cd = third_table_first_cd;
+  } else {
+    printf("ERROR: Could not find column with name [%s]\n", first_join_second_col_tok->tok_string);
+    return INVALID_STATEMENT;
+  }
+
+  int first_join_sec_col_field_offset = 1;
+  cd_entry *cd_iter = first_join_sec_col_first_cd;
+  for (int i = 0; i < first_join_sec_col_cd->col_id; ++i, ++cd_iter) {
+    first_join_sec_col_field_offset += cd_iter->col_len + 1;
+  }
+
+  if (join_first_col_which_tab == first_join_sec_col_which_tab) {
+    printf("ERROR: Can not join table to self\n");
+    return INVALID_STATEMENT;
+  }
+
+
+  /*
+   * Have all variables needed for first join operation
+   * Only possibilities from here:
+   *   - no other conditional | double join
+   *   - another conditional  | double join
+   *   - another join         | triple join
+   *   - order by
+   */
+
+
+  // second join variables
+  token_list *sec_join_first_col_tok = nullptr;
+  token_list *sec_join_sec_col_tok = nullptr;
+  int sec_join_first_col_which_tab;
+  int sec_join_sec_col_which_tab;
+  int sec_join_first_col_offset = 1;
+  int sec_join_sec_col_offset = 1;
+  cd_entry *sec_join_first_tab_first_cd = nullptr;
+  cd_entry *sec_join_second_tab_first_cd = nullptr;
+  char *second_join_first_table_name = nullptr;
+  char *sec_join_sec_col_table_name = nullptr;
+  cd_entry *sec_join_first_col_cd = nullptr;
+  cd_entry *sec_join_sec_col_cd = nullptr;
+
+  // conditional variables
+  token_list *comp_col_tok = nullptr;
+  cd_entry *comp_col_cd = nullptr;
+  int comp_type;
+  token_list *comp_val_tok = nullptr;
+  int comp_col_which_table;
+  char *comp_col_tab_name = nullptr;
+  cd_entry *comp_col_tab_first_cd = nullptr;
+  int comp_col_offset = 0;
+
+  // get second join variables
+  if (third_header != nullptr) {
+
+    sec_join_first_col_tok = comp_cond_token->next;
+    sec_join_sec_col_tok = sec_join_first_col_tok->next->next;
+
+    if ((sec_join_first_col_cd = get_cd(first_tab_token->tok_string, sec_join_first_col_tok->tok_string)) != nullptr) {
+      sec_join_first_col_which_tab = 0;
+      second_join_first_table_name = first_tab_token->tok_string;
+      sec_join_first_tab_first_cd = first_table_first_cd;
+    } else if ((sec_join_first_col_cd = get_cd(second_tab_tok->tok_string, sec_join_first_col_tok->tok_string)) != nullptr) {
+      sec_join_first_col_which_tab = 1;
+      second_join_first_table_name = second_tab_tok->tok_string;
+      sec_join_first_tab_first_cd = second_table_first_cd;
+    } else if ((sec_join_first_col_cd = get_cd(third_tab_tok->tok_string, sec_join_first_col_tok->tok_string)) != nullptr) {
+      sec_join_first_col_which_tab = 2;
+      second_join_first_table_name = third_tab_tok->tok_string;
+      sec_join_first_tab_first_cd = third_table_first_cd;
+    } else {
+      printf("ERROR: Could not find column with name [%s]\n", sec_join_first_col_tok->tok_string);
+      return INVALID_STATEMENT;
+    }
+
+    if ((sec_join_sec_col_cd = get_cd(first_tab_token->tok_string, sec_join_sec_col_tok->tok_string)) != nullptr) {
+      sec_join_sec_col_which_tab = 0;
+      sec_join_sec_col_table_name = first_tab_token->tok_string;
+      sec_join_second_tab_first_cd = first_table_first_cd;
+    } else if ((sec_join_sec_col_cd = get_cd(second_tab_tok->tok_string, sec_join_sec_col_tok->tok_string)) != nullptr) {
+      sec_join_sec_col_which_tab = 1;
+      sec_join_sec_col_table_name = second_tab_tok->tok_string;
+      sec_join_second_tab_first_cd = second_table_first_cd;
+    } else if ((sec_join_sec_col_cd = get_cd(third_tab_tok->tok_string, sec_join_sec_col_tok->tok_string)) != nullptr) {
+      sec_join_sec_col_which_tab = 2;
+      sec_join_sec_col_table_name = third_tab_tok->tok_string;
+      sec_join_second_tab_first_cd = third_table_first_cd;
+    } else {
+      printf("ERROR: Could not find column with name [%s]\n", sec_join_sec_col_tok->tok_string);
+      return INVALID_STATEMENT;
+    }
+
+    if (sec_join_first_col_which_tab == sec_join_sec_col_which_tab) {
+      printf("ERROR: Cannot join to self\n");
+      return INVALID_STATEMENT;
+    }
+
+    if ((sec_join_first_col_which_tab == join_first_col_which_tab
+         || sec_join_first_col_which_tab == first_join_sec_col_which_tab)
+        && ((sec_join_sec_col_which_tab == join_first_col_which_tab
+             || sec_join_sec_col_which_tab == first_join_sec_col_which_tab))) {
+
+      printf("ERROR: The two join predicates must involve three tables\n");
+      return INVALID_STATEMENT;
+    }
+
+    // get the offsets:
+    cd_iter = sec_join_first_tab_first_cd;
+    for (int i = 0; i < sec_join_first_col_cd->col_id; ++i, ++cd_iter) {
+      sec_join_first_col_offset += cd_iter->col_len + 1;
+    }
+
+    cd_iter = sec_join_second_tab_first_cd;
+    for (int i = 0; i < sec_join_sec_col_cd->col_id; ++i, ++cd_iter) {
+      sec_join_sec_col_offset += cd_iter->col_len + 1;
+    }
+
+  } else if (comp_cond_token != nullptr) {
+    // conditional (only for double join)
+    comp_col_tok = comp_cond_token->next;
+
+    if ((comp_col_cd = get_cd(first_tab_token->tok_string, comp_col_tok->tok_string)) != nullptr) {
+      comp_col_which_table = 0;
+      comp_col_tab_name = first_tab_token->tok_string;
+      comp_col_tab_first_cd = first_table_first_cd;
+    } else if ((comp_col_cd = get_cd(second_tab_tok->tok_string, comp_col_tok->tok_string)) != nullptr) {
+      comp_col_which_table = 1;
+      comp_col_tab_name = second_tab_tok->tok_string;
+      comp_col_tab_first_cd = second_table_first_cd;
+    } else if ((comp_col_cd = get_cd(third_tab_tok->tok_string, comp_col_tok->tok_string)) != nullptr) {
+      comp_col_which_table = 2;
+      comp_col_tab_name = third_tab_tok->tok_string;
+      comp_col_tab_first_cd = third_table_first_cd;
+    } else {
+      printf("ERROR: Could not find column with name [%s]\n", comp_col_tok->tok_string);
+      return INVALID_STATEMENT;
+    }
+
+    // set conditional variables
+    rc = get_compare_vals(comp_cond_token, comp_col_tab_name, comp_col_tab_first_cd, false,
+                          &comp_type, &comp_val_tok, &comp_col_cd, &comp_col_offset);
+    if (rc) return rc;
+  }
+
+  /** populate cols to print array **/
+
+  if (first_col_tok->tok_value != S_STAR) {
+    cur_tok = first_col_tok;
+
+    for (int i = 0; i < cols_print_ct; ++i) {
+
+      cd_entry *cur_cd = nullptr;
+      int which_tab;
+
+      if ((cur_cd = get_cd(first_tab_token->tok_string, cur_tok->tok_string)) != nullptr) {
+        which_tab = 0;
+      } else if ((cur_cd = get_cd(second_tab_tok->tok_string, cur_tok->tok_string)) != nullptr) {
+        which_tab = 1;
+      } else if ((cur_cd = get_cd(third_tab_tok->tok_string, cur_tok->tok_string)) != nullptr) {
+        which_tab = 2;
+      } else {
+        printf("ERROR: Could not find column with name [%s]\n", cur_tok->tok_string);
+        return INVALID_STATEMENT;
+      }
+
+      cols_to_print.push_back(*cur_cd);
+      cols_to_print_which_tab.push_back(which_tab);
+      cur_tok = cur_tok->next->next;
+    }
+
+  } else {
+    // add all columns print in order
+
+    cd_iter = (cd_entry *) (((char *) first_table_tpd) + first_table_tpd->cd_offset);
+    for (int i = 0; i < first_table_tpd->num_columns; ++i, ++cd_iter) {
+      cols_to_print.push_back(*cd_iter);
+      cols_to_print_which_tab.push_back(0);
+    }
+
+    cd_iter = (cd_entry *) (((char *) second_table_tpd) + second_table_tpd->cd_offset);
+    for (int i = 0; i < second_table_tpd->num_columns; ++i, ++cd_iter) {
+      cols_to_print.push_back(*cd_iter);
+      cols_to_print_which_tab.push_back(1);
+    }
+
+    if (third_header != nullptr) {
+      cd_iter = (cd_entry *) (((char *) third_table_tpd) + third_table_tpd->cd_offset);
+      for (int i = 0; i < third_table_tpd->num_columns; ++i, ++cd_iter) {
+        cols_to_print.push_back(*cd_iter);
+        cols_to_print_which_tab.push_back(2);
+      }
+    }
+  }
+
+  /** make sure join columns are compatible with each other **/
+
+  if (first_join_col_cd->col_type != first_join_sec_col_cd->col_type) {
+    printf("ERROR: Incompatible join columns [%s] and [%s]\n",
+           first_join_col_cd->col_name, first_join_sec_col_cd->col_name);
+    return INVALID_STATEMENT;
+  }
+
+  if (third_header != nullptr) {
+    if (sec_join_first_col_cd->col_type != sec_join_sec_col_cd->col_type) {
+      printf("ERROR: Incompatible join columns [%s] and [%s]\n",
+             sec_join_first_col_cd->col_name, sec_join_sec_col_cd->col_name);
+      return INVALID_STATEMENT;
+    }
+  }
+
+  /** Nested Loop Join on first two tables **/
+
+  auto *tab_a_header = (table_file_header *) tri_switch(join_first_col_which_tab, first_header,
+                                                        second_header, third_header);
+  auto *tab_b_header = (table_file_header *) tri_switch(first_join_sec_col_which_tab, first_header,
+                                                        second_header, third_header);
+
+  char *a_rec_head = ((char *) (tab_a_header)) + tab_a_header->record_offset;
+  char *b_rec_head = ((char *) (tab_b_header)) + tab_b_header->record_offset;
+
+  char *a_field = a_rec_head + first_join_first_col_field_offset;
+  char *b_field = b_rec_head + first_join_sec_col_field_offset;
+
+  std::vector<record_pair> first_join_pairs;
+
+  for (int i = 0; i < tab_a_header->num_records; ++i) {
+    if (*(a_field - 1) == '\0') continue;
+
+    for (int j = 0; j < tab_b_header->num_records; ++j) {
+      if (*(b_field - 1) == '\0') continue;
+
+      if (!memcmp(a_field, b_field, (size_t) first_join_col_cd->col_len)) {
+        record_pair curr_pair = record_pair();
+        // add the record pair in order (only if no third join)
+        if ((join_first_col_which_tab < first_join_sec_col_which_tab) || (third_header != nullptr)) {
+          curr_pair.tab_a_rec = a_rec_head;
+          curr_pair.tab_b_rec = b_rec_head;
+        } else {
+          curr_pair.tab_a_rec = b_rec_head;
+          curr_pair.tab_b_rec = a_rec_head;
+        }
+        first_join_pairs.push_back(curr_pair);
+      }
+
+      b_rec_head += tab_b_header->record_size;
+      b_field += tab_b_header->record_size;
+    }
+
+    b_rec_head = ((char *) (tab_b_header)) + tab_b_header->record_offset;
+    b_field = b_rec_head + first_join_sec_col_field_offset;
+
+    a_rec_head += tab_a_header->record_size;
+    a_field += tab_a_header->record_size;
+  }
+
+
+  /*
+   * First join done, only possibilities from here:
+   *   - conditional (not join)
+   *   - another join (triple join only)
+   *   - order by
+   */
+
+
+  /** third join OR conditional **/
+
+  // which in first pair to join on
+  bool which_pair_join = (first_join_sec_col_which_tab == sec_join_first_col_which_tab)
+                          || (first_join_sec_col_which_tab == sec_join_sec_col_which_tab);
+
+  // which col from second join params is shared in existing pairs
+  bool which_shared_col = (which_pair_join ? join_first_col_which_tab : first_join_sec_col_which_tab)
+                           == sec_join_sec_col_which_tab;
+
+  std::vector<record_triplet> triplets;
+
+  if (third_header != nullptr) {
+
+    tab_b_header = ((table_file_header *) tri_switch(
+        which_shared_col ? sec_join_first_col_which_tab : sec_join_sec_col_which_tab,
+        first_header, second_header, third_header));
+
+    b_rec_head = ((char *) tab_b_header) + tab_b_header->record_offset;
+    b_field = b_rec_head + (which_shared_col ? sec_join_first_col_offset : sec_join_sec_col_offset);
+
+    auto pair_iter = first_join_pairs.begin();
+    for (; pair_iter != first_join_pairs.end(); ++pair_iter) {
+
+      a_rec_head = which_pair_join ? pair_iter->tab_b_rec : pair_iter->tab_a_rec;
+      a_field = a_rec_head + (which_shared_col ? sec_join_sec_col_offset : sec_join_first_col_offset);
+
+      if (*(a_field - 1) == '\0') continue;
+
+      for (int i = 0; i < tab_b_header->num_records; ++i) {
+        if (*(b_field - 1) == '\0') continue;
+
+        if (!memcmp(a_field, b_field, (size_t) sec_join_sec_col_cd->col_len)) {
+          record_triplet curr_trip = record_triplet();
+
+          curr_trip.tab_a_rec = join_first_col_which_tab == 0     ? pair_iter->tab_a_rec :
+                                first_join_sec_col_which_tab == 0 ? pair_iter->tab_b_rec
+                                                                  : b_rec_head;
+          curr_trip.tab_b_rec = join_first_col_which_tab == 1     ? pair_iter->tab_a_rec :
+                                first_join_sec_col_which_tab == 1 ? pair_iter->tab_b_rec
+                                                                  : b_rec_head;
+          curr_trip.tab_c_rec = join_first_col_which_tab == 2     ? pair_iter->tab_a_rec :
+                                first_join_sec_col_which_tab == 2 ? pair_iter->tab_b_rec
+                                                                  : b_rec_head;
+
+          triplets.push_back(curr_trip);
+        }
+
+        b_rec_head += tab_b_header->record_size;
+        b_field += tab_b_header->record_size;
+      }
+    }
+
+  } else if (false) {
+
+    // todo :: handle ORDER BY
+
+  }
+
+  if ((third_header != nullptr && triplets.empty()) || first_join_pairs.empty()) {
+    printf("0 rows selected.\n");
+    return 0;
+  }
+
+  /** print the results **/
+
+  // header line 1/3
+  printf("+");
+  for (int i = 0; i < cols_to_print.size(); ++i) printf("%s+", std::string(16, '-').c_str());
+
+  // header line 2/3
+  printf("\n|");
+  for (int i = 0; i < cols_to_print.size(); ++i) {
+    printf("%-*s|", 16, cols_to_print.at((unsigned long) i).col_name);
+  }
+  printf("\n+");
+
+  // header line 3/3
+  for (int i = 0; i < cols_to_print.size(); ++i) printf("%s+", std::string(16, '-').c_str());
+  printf("\n|");
+
+  // pairs
+  if (third_header == nullptr) {
+
+    auto pair_iter = first_join_pairs.begin();
+    for (; pair_iter != first_join_pairs.end(); ++pair_iter) {
+
+      bool satis_cond = true;
+
+      if (comp_cond_token != nullptr) {
+        char *cmp_rc_head = comp_col_which_table ? pair_iter->tab_b_rec : pair_iter->tab_a_rec;
+        char *cmp_field = cmp_rc_head + comp_col_offset;
+
+        satis_cond = satisfies_condition(cmp_field, comp_type, comp_val_tok, comp_col_cd->col_len);
+      }
+
+      if (!satis_cond) continue;
+
+      for (int j = 0; j < cols_to_print.size(); ++j) {
+
+        cd_entry *print_cd = &(cols_to_print.at((unsigned long) j));
+        char *print_field = cols_to_print_which_tab[j] ? pair_iter->tab_b_rec
+                                                       : pair_iter->tab_a_rec;
+
+        cd_iter = cols_to_print_which_tab[j] ? second_table_first_cd : first_table_first_cd;
+
+        while (cd_iter->col_id != print_cd->col_id) print_field += (cd_iter++)->col_len + 1;
+
+        if ((int) print_field[0] == 0) {
+          if (print_cd->col_type == T_CHAR) {
+            printf("NULL%s|", std::string(12, ' ').c_str());
+          } else {
+            printf("%sNULL|", std::string(12, ' ').c_str());
+          }
+
+        } else if (print_cd->col_type == T_CHAR) {
+
+          char *data = (char *) calloc(1, (size_t) print_cd->col_len);
+          memcpy(data, (print_field + 1), (size_t) print_cd->col_len);
+          printf("%-*s|", 16, data);
+          free(data);
+
+        } else if (print_cd->col_type == T_INT) {
+
+          int *data = (int *) calloc(1, sizeof(int));
+          memcpy(data, &(print_field + 1)[0], sizeof(int));
+          printf("%*d|", 16, *data);
+          free(data);
+
+        } else {
+          printf("unexpected type\n");
+        }
+      }
+
+      if (pair_iter != first_join_pairs.end() - 1) printf("\n|");
+    }
+
+  } else {
+    // triplets
+
+    auto trip_iter = triplets.begin();
+    for (; trip_iter != triplets.end(); ++trip_iter) {
+
+      for (int j = 0; j < cols_to_print.size(); ++j) {
+
+        cd_entry *print_cd = &(cols_to_print.at((unsigned long) j));
+        auto *print_field = (char *) tri_switch(cols_to_print_which_tab[j], trip_iter->tab_a_rec,
+                                                trip_iter->tab_b_rec, trip_iter->tab_c_rec);
+
+        cd_iter = (cd_entry *) tri_switch(cols_to_print_which_tab[j], first_table_first_cd,
+                                          second_table_first_cd, third_table_first_cd);
+
+        while (cd_iter->col_id != print_cd->col_id) print_field += (cd_iter++)->col_len + 1;
+
+        if ((int) print_field[0] == 0) {
+          if (print_cd->col_type == T_CHAR) {
+            printf("NULL%s|", std::string(12, ' ').c_str());
+          } else {
+            printf("%sNULL|", std::string(12, ' ').c_str());
+          }
+
+        } else if (print_cd->col_type == T_CHAR) {
+
+          char *data = (char *) calloc(1, (size_t) print_cd->col_len);
+          memcpy(data, (print_field + 1), (size_t) print_cd->col_len);
+          printf("%-*s|", 16, data);
+          free(data);
+
+        } else if (print_cd->col_type == T_INT) {
+
+          int *data = (int *) calloc(1, sizeof(int));
+          memcpy(data, &(print_field + 1)[0], sizeof(int));
+          printf("%*d|", 16, *data);
+          free(data);
+
+        } else {
+          printf("unexpected type\n");
+        }
+      }
+
+      if (trip_iter != triplets.end() - 1) printf("\n|");
+    }
+
+  }
+
+  printf("\n+");
+  for (int i = 0; i < cols_to_print.size(); ++i) printf("%s+", std::string(16, '-').c_str());
+  printf("\n");
+
+  return rc;
+}
+
 int sem_update_value(token_list *cur_token) {
   int rc = 0;
   char *table_name = cur_token->tok_string;
@@ -2315,7 +2987,7 @@ int sem_update_value(token_list *cur_token) {
     cd_entry *compare_cd = nullptr;
     int comp_field_offset = 0;
 
-    rc = get_compare_vals(cur_token->next, table_name, first_cd, &comp_type,
+    rc = get_compare_vals(cur_token->next, table_name, first_cd, false, &comp_type,
                           &compare_value_token, &compare_cd, &comp_field_offset);
 
     if (rc) return rc;
@@ -2392,7 +3064,7 @@ int sem_delete_value(token_list *cur_token) {
     cd_entry *compare_cd = nullptr;
     int comp_field_offset = 0;
 
-    rc = get_compare_vals(cur_token, table_name, first_cd, &comp_type,
+    rc = get_compare_vals(cur_token, table_name, first_cd, false, &comp_type,
                           &compare_value_token, &compare_cd, &comp_field_offset);
 
     if (rc) return rc;
@@ -2437,8 +3109,9 @@ int sem_delete_value(token_list *cur_token) {
   return rc;
 }
 
-int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, int *comp_type,
-                     token_list **comp_value_token, cd_entry **compare_cd, int *comp_field_offset) {
+int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd, bool is_join,
+                     int *r_comp_type, token_list **r_comp_value_token,
+                     cd_entry **r_compare_cd, int *r_comp_field_offset) {
 
   if ((cur_token->tok_value != K_WHERE && cur_token->tok_value != K_OR
        && cur_token->tok_value != K_AND)
@@ -2460,8 +3133,8 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
     return INVALID_STATEMENT;
   }
 
-  *comp_type = cur_token->tok_value;
-  *comp_value_token = cur_token->next;
+  *r_comp_type = cur_token->tok_value;
+  *r_comp_value_token = cur_token->next;
 
   if (cur_token->tok_value == K_IS) {
     cur_token = cur_token->next;
@@ -2471,8 +3144,8 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
 
       if (cur_token->tok_value == K_NULL) {
         // IS NOT NULL
-        *comp_type = K_NOT;
-        *comp_value_token = cur_token;
+        *r_comp_type = K_NOT;
+        *r_comp_value_token = cur_token;
 
       } else {
         return INVALID_STATEMENT;
@@ -2480,8 +3153,8 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
 
     } else if (cur_token->tok_value == K_NULL) {
       // IS NULL
-      *comp_type = K_IS;
-      *comp_value_token = cur_token;
+      *r_comp_type = K_IS;
+      *r_comp_value_token = cur_token;
 
     } else {
       return INVALID_STATEMENT;
@@ -2489,23 +3162,24 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
 
   }
 
-  *compare_cd = get_cd(table_name, col_name);
+  *r_compare_cd = get_cd(table_name, col_name);
 
-  if (*compare_cd == nullptr) {
+  if (*r_compare_cd == nullptr) {
     return COLUMN_NOT_EXIST;
   }
 
-  if (((*comp_value_token)->tok_value != K_NULL)
-      && (((*compare_cd)->col_type == T_INT && (*comp_value_token)->tok_value != INT_LITERAL)
-      || ((*compare_cd)->col_type == T_CHAR && (*comp_value_token)->tok_value != STRING_LITERAL))) {
+  if ((((*r_comp_value_token)->tok_value != K_NULL)
+       && (((*r_compare_cd)->col_type == T_INT && (*r_comp_value_token)->tok_value != INT_LITERAL)
+           || ((*r_compare_cd)->col_type == T_CHAR && (*r_comp_value_token)->tok_value != STRING_LITERAL)))
+      && !is_join) {
 
     return INVALID_STATEMENT;
   }
 
-  *comp_field_offset = 1;
+  *r_comp_field_offset = 1;
   cd_entry *cd_iter = first_cd;
-  for (int i = 0; i < (*compare_cd)->col_id; ++i, ++cd_iter) {
-    *comp_field_offset += cd_iter->col_len + 1;
+  for (int i = 0; i < (*r_compare_cd)->col_id; ++i, ++cd_iter) {
+    *r_comp_field_offset += cd_iter->col_len + 1;
   }
 
   return 0;
@@ -2585,12 +3259,12 @@ int delete_tab_file(char *tab_name) {
 }
 
 bool compare_records_by_val(const char *record_a, const char *record_b,
-                                cd_entry *order_cd, int field_offset, bool desc) {
+                            cd_entry *order_cd, int field_offset, bool desc) {
 
   if ((int) ((record_a + field_offset)[0]) == 0) {
     return false;
 
-  } else if((int) ((record_b + field_offset)[0]) == 0) {
+  } else if ((int) ((record_b + field_offset)[0]) == 0) {
     return true;
 
   } else if (order_cd->col_type == T_INT) {
@@ -2624,4 +3298,23 @@ bool compare_records_by_val(const char *record_a, const char *record_b,
     return desc != ret_val;
   }
 
+}
+
+//bool cmp_rec_pair(record_pair *rec_pair_a, record_pair *rec_pair_b, cd_entry *order_cd, bool which,
+//                  int field_offset, bool desc) {
+//
+//
+//}
+
+//bool cmp_rec_triplet(record_triplet *trip_a, record_triplet *trip_b, cd_entry *order_cd, int which,
+//                     int field_offset, bool desc) {
+//
+//
+//}
+
+
+void *tri_switch(int swtch, void *ret_zero, void *ret_one, void *ret_two) {
+  if (swtch == 0) return ret_zero;
+  else if (swtch == 1) return ret_one;
+  else return ret_two;
 }
