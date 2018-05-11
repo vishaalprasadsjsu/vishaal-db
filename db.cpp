@@ -356,7 +356,7 @@ int do_semantic(token_list *tok_list) {
     rc = cur_cmd;
   }
 
-  if (g_tpd_list->db_flags && cur_cmd != ROLLFORWARD && !is_rollforwarding) {
+  if (g_tpd_list->db_flags && cur_cmd != ROLLFORWARD && !is_rollforwarding && cur_cmd != SELECT) {
     printf("ROLLFWORAD PENDING\nDID NOT EXECUTE STATEMENT\n");
     return -1;
   }
@@ -665,10 +665,10 @@ int sem_drop_table(token_list *t_list) {
     rc = INVALID_TABLE_NAME;
     cur->tok_value = INVALID;
   } else {
-    if (cur->next->tok_value != EOC) {
-      rc = INVALID_STATEMENT;
-      cur->next->tok_value = INVALID;
-    } else {
+//    if (cur->next->tok_value != EOC || false) {
+//      rc = INVALID_STATEMENT;
+//      cur->next->tok_value = INVALID;
+//    } else {
       if ((tab_entry = get_tpd_from_list(cur->tok_string)) == NULL) {
         rc = TABLE_NOT_EXIST;
         cur->tok_value = INVALID;
@@ -677,7 +677,7 @@ int sem_drop_table(token_list *t_list) {
         delete_tab_file(cur->tok_string);
         rc = drop_tpd_from_list(cur->tok_string);
       }
-    }
+//    }
   }
 
   return rc;
