@@ -1838,7 +1838,7 @@ int sem_select_agg(token_list *t_list, token_list *group_token) {
 
     group_token = group_token->next->next;
 
-    if (strcmp(t_list->tok_string, group_token->tok_string)) {
+    if (strcasecmp(t_list->tok_string, group_token->tok_string)) {
       printf("Check GROUP BY syntax, column name should appear twice\n");
       return INVALID_STATEMENT;
     }
@@ -2562,7 +2562,7 @@ cd_entry *get_cd(char *table_name, char *col_name) {
   cd_entry *curr_cd = (cd_entry *) ((char *) this_tpd + this_tpd->cd_offset);
 
   for (int i = 0; i < this_tpd->num_columns; ++i, ++curr_cd) {
-    if (!strcmp(curr_cd->col_name, col_name)) {
+    if (!strcasecmp(curr_cd->col_name, col_name)) {
       return curr_cd;
     }
   }
