@@ -2761,9 +2761,6 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
         which_shared_col ? sec_join_first_col_which_tab : sec_join_sec_col_which_tab,
         first_header, second_header, third_header));
 
-    b_rec_head = ((char *) tab_b_header) + tab_b_header->record_offset;
-    b_field = b_rec_head + (which_shared_col ? sec_join_first_col_offset : sec_join_sec_col_offset);
-
     auto pair_iter = first_join_pairs.begin();
     for (; pair_iter != first_join_pairs.end(); ++pair_iter) {
 
@@ -2772,10 +2769,28 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
 
       if (*(a_field - 1) == '\0') continue;
 
+      b_rec_head = ((char *) tab_b_header) + tab_b_header->record_offset;
+      b_field = b_rec_head + (which_shared_col ? sec_join_first_col_offset : sec_join_sec_col_offset);
+
       for (int i = 0; i < tab_b_header->num_records; ++i) {
         if (*(b_field - 1) == '\0') continue;
 
-        if (!memcmp(a_field, b_field, (size_t) sec_join_sec_col_cd->col_len)) {
+        bool equals;
+
+        if (sec_join_first_col_cd->col_type == T_INT) {
+          equals = !memcmp(a_field, b_field, (size_t) sec_join_first_col_cd->col_len);
+
+        } else {
+          auto *a_data = (char *) calloc(1, (size_t) sec_join_first_col_cd->col_len);
+          auto *b_data = (char *) calloc(1, (size_t) sec_join_sec_col_cd->col_len);
+          memcpy(a_data, a_field, (size_t) sec_join_first_col_cd->col_len);
+          memcpy(b_data, b_field, (size_t) sec_join_sec_col_cd->col_len);
+          equals = !strcmp(a_data, b_data);
+          free(a_data);
+          free(b_data);
+        }
+
+        if (equals) {
           record_triplet curr_trip = record_triplet();
 
           curr_trip.tab_a_rec = join_first_col_which_tab == 0     ? pair_iter->tab_a_rec :
@@ -2836,6 +2851,8 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
   for (int i = 0; i < cols_to_print.size(); ++i) printf("%s+", std::string(16, '-').c_str());
   printf("\n|");
 
+  int count = 0;
+
   // pairs
   if (third_header == nullptr) {
 
@@ -2852,6 +2869,8 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
       }
 
       if (!satis_cond) continue;
+
+      count++;
 
       for (int j = 0; j < cols_to_print.size(); ++j) {
 
@@ -2892,9 +2911,10 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
       if (pair_iter != first_join_pairs.end() - 1) printf("\n|");
     }
 
+
   } else {
     // triplets
-
+    count = (int) triplets.size();
     auto trip_iter = triplets.begin();
     for (; trip_iter != triplets.end(); ++trip_iter) {
 
@@ -2940,9 +2960,14 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
 
   }
 
-  printf("\n+");
-  for (int i = 0; i < cols_to_print.size(); ++i) printf("%s+", std::string(16, '-').c_str());
-  printf("\n");
+  // end of table
+  if (count) {
+    printf("\n+");
+    for (int i = 0; i < cols_to_print.size(); ++i) printf("%s+", std::string(16, '-').c_str());
+    printf("\n");
+  }
+
+  printf("%d row%s selected.\n", count, count == 1 ? "" : "s");
 
   return rc;
 }

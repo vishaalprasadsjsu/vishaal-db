@@ -13,21 +13,24 @@
 ./db "insert into class values (10, 'Stephen', 'M', 520, 76, 596)" ;
 
 ./db "create table test (col1 int, col2 char(10), col3 int)";
-./db "insert into test values (1, 'a', 11)";
-./db "insert into test values (2, 'b', 12)";
+./db "insert into test values (1, 'Siu', 11)";
+./db "insert into test values (2, 'Frank', 12)";
 ./db "insert into test values (3, 'c', 13)";
 ./db "insert into test values (4, 'd', 14)";
 ./db "insert into test values (5, 'e', 15)";
 
-./db "create table foo (col4 int, col5 int)";
-./db "insert into foo values (3, 23)";
-./db "insert into foo values (4, 24)";
-./db "insert into foo values (5, 25)";
+./db "create table foo (gen char(5), col5 int)";
+./db "insert into foo values ('M', 23)";
+./db "insert into foo values ('F', 24)";
+./db "insert into foo values ('M', 25)";
 
 /usr/bin/clear;
 
+echo "class:" ;
 ./db "select * from class" ;
 
+echo "test:" ;
 ./db "select * from test" ;
 
+echo "foo:" ;
 ./db "select * from foo" ;
