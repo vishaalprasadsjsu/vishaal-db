@@ -2392,6 +2392,8 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
       order_by_col_offset = 0;
       while (cd_iter != order_cd) order_by_col_offset += (cd_iter++)->col_len + 1;
       order_desc = (order_by_tok->next->tok_value == K_DESC);
+    } else {
+      order_by_tok = nullptr;
     }
   }
 
@@ -2693,7 +2695,22 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
     for (int j = 0; j < tab_b_header->num_records; ++j) {
       if (*(b_field - 1) == '\0') continue;
 
-      if (!memcmp(a_field, b_field, (size_t) first_join_col_cd->col_len)) {
+      bool equals;
+
+      if (first_join_col_cd->col_type == T_INT) {
+        equals = !memcmp(a_field, b_field, (size_t) first_join_col_cd->col_len);
+
+      } else {
+        char *a_data = (char *) calloc(1, (size_t) first_join_col_cd->col_len);
+        char *b_data = (char *) calloc(1, (size_t) first_join_sec_col_cd->col_len);
+        memcpy(a_data, a_field, (size_t) first_join_col_cd->col_len);
+        memcpy(b_data, b_field, (size_t) first_join_sec_col_cd->col_len);
+        equals = !strcmp(a_data, b_data);
+        free(a_data);
+        free(b_data);
+      }
+
+      if (equals) {
         record_pair curr_pair = record_pair();
         // add the record pair in order (only if no third join)
         if ((join_first_col_which_tab < first_join_sec_col_which_tab) || (third_header != nullptr)) {
@@ -2728,17 +2745,17 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
 
   /** third join **/
 
-  // which in first pair to join on
-  bool which_pair_join = (first_join_sec_col_which_tab == sec_join_first_col_which_tab)
-                          || (first_join_sec_col_which_tab == sec_join_sec_col_which_tab);
-
-  // which col from second join params is shared in existing pairs
-  bool which_shared_col = (which_pair_join ? join_first_col_which_tab : first_join_sec_col_which_tab)
-                           == sec_join_sec_col_which_tab;
-
   std::vector<record_triplet> triplets;
 
   if (third_header != nullptr) {
+
+    // which in first pair to join on
+    bool which_pair_join = (first_join_sec_col_which_tab == sec_join_first_col_which_tab)
+                           || (first_join_sec_col_which_tab == sec_join_sec_col_which_tab);
+
+    // which col from second join params is shared in existing pairs
+    bool which_shared_col = (which_pair_join ? join_first_col_which_tab : first_join_sec_col_which_tab)
+                            == sec_join_sec_col_which_tab;
 
     tab_b_header = ((table_file_header *) tri_switch(
         which_shared_col ? sec_join_first_col_which_tab : sec_join_sec_col_which_tab,
