@@ -2289,12 +2289,17 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
     return INVALID_STATEMENT;
   }
 
-  /** how many joins, is there conditional **/
+  /** how many joins, is there conditional, ORDER BY variables **/
 
   // Following two tokens point to K_WHERE and/or K_AND
   token_list *join_cond_token = nullptr;
   token_list *comp_cond_token = nullptr; // optional for double join, mandatory for triple join
   token_list *order_by_tok = nullptr;
+
+  cd_entry *order_cd = nullptr;
+  int order_which_tab;
+  int order_by_col_offset;
+  bool order_desc;
 
   /*
    * double joins only -- WHERE <cond> AND <join_predicate>
@@ -2345,16 +2350,6 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
         }
       }
 
-    } else if (comp_cond_token->tok_value == K_ORDER) {
-
-      if (third_table_tpd != nullptr) {
-        printf("ERROR: Expected second join predicate for triple-join\n");
-        return INVALID_STATEMENT;
-      }
-
-      order_by_tok = comp_cond_token;
-      comp_cond_token = nullptr;
-
     } else {
       // no second conditional
       comp_cond_token = nullptr;
@@ -2362,6 +2357,41 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
         printf("ERROR: Expected another join predicate for triple join.\n");
         return INVALID_STATEMENT;
       }
+    }
+
+    order_by_tok = (comp_cond_token ? comp_cond_token : join_cond_token)->next->next->next->next;
+
+    if (order_by_tok->tok_value == K_ORDER) {
+
+      if (order_by_tok->next->tok_value != K_BY) {
+        printf("ERROR: Expected BY after ORDER\n");
+        return INVALID_STATEMENT;
+      }
+
+      order_by_tok = order_by_tok->next->next;
+      cd_entry *cd_iter;
+      char *order_by_tab_name;
+
+      if ((order_cd = get_cd(first_tab_token->tok_string, order_by_tok->tok_string)) != nullptr) {
+        order_which_tab = 0;
+        cd_iter = first_table_first_cd;
+        order_by_tab_name = first_table_tpd->table_name;
+      } else if ((order_cd = get_cd(second_tab_tok->tok_string, order_by_tok->tok_string)) != nullptr) {
+        order_which_tab = 1;
+        cd_iter = second_table_first_cd;
+        order_by_tab_name = second_table_tpd->table_name;
+      } else if ((order_cd = get_cd(third_tab_tok->tok_string, order_by_tok->tok_string)) != nullptr) {
+        order_which_tab = 2;
+        cd_iter = third_table_first_cd;
+        order_by_tab_name = third_table_tpd->table_name;
+      } else {
+        printf("ERROR: Could not find column with name [%s]\n", order_by_tok->tok_string);
+        return INVALID_STATEMENT;
+      }
+
+      order_by_col_offset = 0;
+      while (cd_iter != order_cd) order_by_col_offset += (cd_iter++)->col_len + 1;
+      order_desc = (order_by_tok->next->tok_value == K_DESC);
     }
   }
 
@@ -2696,7 +2726,7 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
    */
 
 
-  /** third join OR conditional **/
+  /** third join **/
 
   // which in first pair to join on
   bool which_pair_join = (first_join_sec_col_which_tab == sec_join_first_col_which_tab)
@@ -2749,9 +2779,21 @@ int sem_select_join(int cols_print_ct, token_list *first_col_tok, token_list *fi
       }
     }
 
-  } else if (false) {
+  }
 
-    // todo :: handle ORDER BY
+  /** Handle ORDER BY **/
+
+  if (order_by_tok != nullptr) {
+
+    if (third_header) {
+      std::sort(triplets.begin(), triplets.end(),
+                std::bind(cmp_rec_trips, _1, _2, order_cd, order_which_tab, order_by_col_offset,
+                          order_desc));
+    } else {
+      std::sort(first_join_pairs.begin(), first_join_pairs.end(),
+                std::bind(cmp_rec_pairs, _1, _2, order_cd, order_which_tab, order_by_col_offset,
+                          order_desc));
+    }
 
   }
 
@@ -3297,21 +3339,99 @@ bool compare_records_by_val(const char *record_a, const char *record_b,
 
     return desc != ret_val;
   }
-
 }
 
-//bool cmp_rec_pair(record_pair *rec_pair_a, record_pair *rec_pair_b, cd_entry *order_cd, bool which,
-//                  int field_offset, bool desc) {
-//
-//
-//}
+bool cmp_rec_trips(record_triplet a, record_triplet b, cd_entry *order_cd, int which, int field_offset, bool desc) {
 
-//bool cmp_rec_triplet(record_triplet *trip_a, record_triplet *trip_b, cd_entry *order_cd, int which,
-//                     int field_offset, bool desc) {
-//
-//
-//}
+  char *cmp_rec_a = nullptr;
+  char *cmp_rec_b = nullptr;
 
+  cmp_rec_a = (char *) tri_switch(which, a.tab_a_rec, a.tab_b_rec, a.tab_c_rec);
+  cmp_rec_b = (char *) tri_switch(which, b.tab_a_rec, b.tab_b_rec, b.tab_c_rec);
+
+  if ((int) ((cmp_rec_a + field_offset)[0]) == 0) {
+    return false;
+
+  } else if ((int) ((cmp_rec_b + field_offset)[0]) == 0) {
+    return true;
+
+  } else if (order_cd->col_type == T_INT) {
+
+    int *data_a = (int *) calloc(1, sizeof(int));
+    int *data_b = (int *) calloc(1, sizeof(int));
+
+    memcpy(data_a, &(cmp_rec_a + field_offset + 1)[0], sizeof(int));
+    memcpy(data_b, &(cmp_rec_b + field_offset + 1)[0], sizeof(int));
+
+    bool ret_val = (*data_a < *data_b);
+
+    free(data_a);
+    free(data_b);
+
+    return desc != ret_val;
+
+  } else {
+
+    char *data_a = (char *) calloc(1, (size_t) order_cd->col_len);
+    char *data_b = (char *) calloc(1, (size_t) order_cd->col_len);
+
+    memcpy(data_a, (cmp_rec_a + field_offset + 1), (size_t) order_cd->col_len);
+    memcpy(data_b, (cmp_rec_b + field_offset + 1), (size_t) order_cd->col_len);
+
+    bool ret_val = (strcmp(data_a, data_b) < 0);
+
+    free(data_a);
+    free(data_b);
+
+    return desc != ret_val;
+  }
+}
+
+bool cmp_rec_pairs(record_pair a, record_pair b, cd_entry *order_cd, int which, int field_offset, bool desc) {
+
+  char *cmp_rec_a = nullptr;
+  char *cmp_rec_b = nullptr;
+
+  cmp_rec_a = (which ? a.tab_b_rec : a.tab_a_rec);
+  cmp_rec_b = (which ? b.tab_b_rec : b.tab_a_rec);
+
+  if ((int) ((cmp_rec_a + field_offset)[0]) == 0) {
+    return false;
+
+  } else if ((int) ((cmp_rec_b + field_offset)[0]) == 0) {
+    return true;
+
+  } else if (order_cd->col_type == T_INT) {
+
+    int *data_a = (int *) calloc(1, sizeof(int));
+    int *data_b = (int *) calloc(1, sizeof(int));
+
+    memcpy(data_a, &(cmp_rec_a + field_offset + 1)[0], sizeof(int));
+    memcpy(data_b, &(cmp_rec_b + field_offset + 1)[0], sizeof(int));
+
+    bool ret_val = (*data_a < *data_b);
+
+    free(data_a);
+    free(data_b);
+
+    return (desc != ret_val);
+
+  } else {
+
+    char *data_a = (char *) calloc(1, (size_t) order_cd->col_len);
+    char *data_b = (char *) calloc(1, (size_t) order_cd->col_len);
+
+    memcpy(data_a, (cmp_rec_a + field_offset + 1), (size_t) order_cd->col_len);
+    memcpy(data_b, (cmp_rec_b + field_offset + 1), (size_t) order_cd->col_len);
+
+    bool ret_val = (strcmp(data_a, data_b) < 0);
+
+    free(data_a);
+    free(data_b);
+
+    return (desc != ret_val);
+  }
+}
 
 void *tri_switch(int swtch, void *ret_zero, void *ret_one, void *ret_two) {
   if (swtch == 0) return ret_zero;

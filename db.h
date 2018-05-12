@@ -257,11 +257,9 @@ int get_compare_vals(token_list *cur_token, char *table_name, cd_entry *first_cd
                      int *r_comp_field_offset);
 bool compare_records_by_val(const char *record_a, const char *record_b,
                             cd_entry *order_cd, int field_offset, bool desc);
+bool cmp_rec_pairs(record_pair a, record_pair b, cd_entry *order_cd, int which, int field_offset, bool desc);
+bool cmp_rec_trips(record_triplet a, record_triplet b, cd_entry *order_cd, int which, int field_offset, bool desc);
 int add_to_log_end(token_list *first_token);
 std::string get_timestamp();
 bool is_timestamp_before(std::string first, std::string second);
-bool cmp_rec_pair(record_pair *rec_pair_a, record_pair *rec_pair_b, cd_entry *order_cd, bool which,
-                  int field_offset, bool desc);
-bool cmp_rec_triplet(record_triplet *trip_a, record_triplet *trip_b, cd_entry *order_cd, int which,
-                     int field_offset, bool desc);
 void *tri_switch(int swtch, void *ret_zero, void *ret_one, void *ret_two);

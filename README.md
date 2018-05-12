@@ -47,6 +47,7 @@ $ ./db "CREATE TABLE class (student char(12) NOT NULL, gender char(1), exams int
   * `SELECT *` or `SELECT <col>, <col>, ...`
   * `SELECT <aggregate>` (i.e. `SUM`, `AVG` and `COUNT`)
   * `SELECT <col>, <aggregate>(<col2>) ... GROUP BY <col>`
+  * `SELECT ... FROM <tab1>, <tab2> WHERE <col1> = <col2> AND <col3> = <col4>` (inner join, 2 or 3 tables) 
   * `... ORDER BY`
   * `... WHERE`
 * Backup/Restore functionality: 
