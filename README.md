@@ -1,5 +1,5 @@
-CS 157B Database Project 
-========================
+vishaalDB 
+========= 
 A basic relational database capable of processing basic SQL statements. 
 
 ```
