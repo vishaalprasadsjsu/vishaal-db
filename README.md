@@ -1,6 +1,6 @@
 vishaalDB 
 ========= 
-A basic relational database capable of processing basic SQL statements. 
+A relational database capable of processing basic SQL statements. 
 
 ```
 $ ./db "select * from class" 
