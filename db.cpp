@@ -45,14 +45,6 @@ int main(int argc, char **argv) {
   } else {
     rc = get_token(argv[1], &tok_list);
 
-//    /* Test code */
-//    tok_ptr = tok_list;
-//    while (tok_ptr != NULL) {
-//      printf("%16s \t%d \t %d\n", tok_ptr->tok_string, tok_ptr->tok_class,
-//             tok_ptr->tok_value);
-//      tok_ptr = tok_ptr->next;
-//    }
-
     if (!rc) {
       rc = do_semantic(tok_list);
     }
