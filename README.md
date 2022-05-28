@@ -53,7 +53,7 @@ $ ./db "CREATE TABLE class (student char(12) NOT NULL, gender char(1), exams int
 * Backup/Restore functionality: 
   * `BACKUP TO <name>` 
   * `RESTORE FROM <name>`, `RESTORE FROM <name> WITHOUT RF` 
-  * `ROLLFORWARD` or `ROLLFORWARD TO <time>` where time is a 14-digit timestamp 
+  * `ROLLFORWARD` or `ROLLFORWARD TO <time>` where `<time>` is a 14-digit timestamp 
 
-All DDL and DML statements (except `SELECT`) are logged in db.log. 
-Log backups from backup/restore functionality are stored in db.log# with incrementing numbers. 
+All DDL and DML statements (except `SELECT`) are logged in `db.log`. 
+Log backups from backup/restore functionality are stored in `db.log#` with incrementing numbers. 
